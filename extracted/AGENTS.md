@@ -1,4 +1,4 @@
-# figma-make-app
+# ERC Masoro App
 
 React + Vite + Tailwind CSS project running inside Figma Make.
 
