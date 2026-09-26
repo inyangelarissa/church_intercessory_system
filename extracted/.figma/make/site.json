@@ -1,0 +1,10 @@
+{
+  "description": "Streamline church intercessory activities by managing prayer requests, schedules, and participation to enhance coordination and communication effectively.",
+  "robots": {
+    "index": false
+  },
+  "accessibility": {
+    "addBypassLinks": false,
+    "ignoreReducedMotion": false
+  }
+}
