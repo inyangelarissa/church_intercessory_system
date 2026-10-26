@@ -72,6 +72,7 @@ const priorityConfig: Record<string, { bg: string; text: string; dot: string }> 
 export default function Dashboard() {
   const [hoveredBar, setHoveredBar] = useState<number | null>(null);
   const [statValues, setStatValues] = useState(defaultStatValues);
+  const [statsError, setStatsError] = useState("");
   const [recentRequests, setRecentRequests] = useState<any[]>([]);
   const [upcomingSessions, setUpcomingSessions] = useState<any[]>([]);
 
@@ -81,6 +82,7 @@ export default function Dashboard() {
     api.dashboard.stats()
       .then((s) => {
         if (cancelled) return;
+        setStatsError("");
         setStatValues({
           totalIntercessors: Number(s?.totalIntercessors ?? 0),
           openRequests: Number(s?.openRequests ?? 0),
@@ -91,7 +93,7 @@ export default function Dashboard() {
       })
       .catch(() => {
         if (!cancelled) {
-          setStatValues(defaultStatValues);
+          setStatsError("Dashboard data could not be loaded. Please refresh or sign in again.");
         }
       });
 
@@ -152,6 +154,11 @@ export default function Dashboard() {
         <p className="mt-1 text-sm" style={{ color: "#94a3b8" }}>
           A unified view of all intercessory activities across the congregation.
         </p>
+        {statsError && (
+          <p className="mt-3 rounded-lg px-3 py-2 text-sm" style={{ background: "rgba(139,0,0,0.08)", color: "#8b0000" }}>
+            {statsError}
+          </p>
+        )}
       </div>
 
       {/* Stats */}
