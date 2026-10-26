@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { db } from "../db.js";
+import { all, get, run } from "../db.js";
 import { requireAuth, requireSenior, isSenior, intercessorIdForUser } from "../auth.js";
 
 const router = Router();
@@ -17,27 +17,27 @@ const SELECT = `
   LEFT JOIN intercessors i ON i.id = pr.assigned_intercessor_id
 `;
 
-const getOne = (id) => db.prepare(`${SELECT} WHERE pr.id = ?`).get(id);
+const getOne = (id) => get(`${SELECT} WHERE pr.id = ?`, [id]);
 const today = () => new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 const initialsOf = (name) => name.trim().split(/\s+/).map(w => w[0]).slice(0, 2).join("").toUpperCase();
 
 // ---- Public: congregants submit a request from the home page (no login) ----
-const hits = new Map();
-function publicRateLimit(req, res, next) {
+// Stored in the database (not in memory) because serverless instances do not share memory.
+async function publicRateLimit(req, res, next) {
   const windowMs = 60 * 60 * 1000;
   const max = 10;
   const now = Date.now();
-  if (hits.size > 5000) hits.clear();
-  const recent = (hits.get(req.ip) || []).filter(t => now - t < windowMs);
-  if (recent.length >= max) {
+  const bucket = `public-prayer:${req.ip}`;
+  await run("DELETE FROM rate_limits WHERE ts < ?", [now - windowMs]);
+  const { c } = await get("SELECT COUNT(*) AS c FROM rate_limits WHERE bucket = ?", [bucket]);
+  if (c >= max) {
     return res.status(429).json({ error: "Too many requests from this connection. Please try again later." });
   }
-  recent.push(now);
-  hits.set(req.ip, recent);
+  await run("INSERT INTO rate_limits (bucket, ts) VALUES (?, ?)", [bucket, now]);
   next();
 }
 
-router.post("/public", publicRateLimit, (req, res) => {
+router.post("/public", publicRateLimit, async (req, res) => {
   const { name, contact, email, category, request, anonymous } = req.body || {};
   const text = typeof request === "string" ? request.trim() : "";
   if (!text) return res.status(400).json({ error: "Please describe your prayer need." });
@@ -50,10 +50,11 @@ router.post("/public", publicRateLimit, (req, res) => {
   const cleanCategory = CATEGORIES.includes(category) ? category : "Other";
   const cleanContact = isAnonymous ? "" : [contact, email].map(v => (typeof v === "string" ? v.trim().slice(0, 120) : "")).filter(Boolean).join(" · ");
 
-  db.prepare(`
-    INSERT INTO prayer_requests (name, initials, contact, request, category, priority, status, date, notes)
-    VALUES (?, ?, ?, ?, ?, 'Normal', 'Open', ?, '')
-  `).run(cleanName, isAnonymous ? "AN" : initialsOf(cleanName), cleanContact, text, cleanCategory, today());
+  await run(
+    `INSERT INTO prayer_requests (name, initials, contact, request, category, priority, status, date, notes)
+     VALUES (?, ?, ?, ?, ?, 'Normal', 'Open', ?, '')`,
+    [cleanName, isAnonymous ? "AN" : initialsOf(cleanName), cleanContact, text, cleanCategory, today()]
+  );
 
   // Deliberately no request data in the response: this endpoint is unauthenticated.
   res.status(201).json({ ok: true });
@@ -62,32 +63,33 @@ router.post("/public", publicRateLimit, (req, res) => {
 // ---- Authenticated ----
 
 // Senior Intercessor: every request. Intercessor: only the ones assigned to them.
-router.get("/", requireAuth, (req, res) => {
+router.get("/", requireAuth, async (req, res) => {
   if (isSenior(req.user)) {
-    return res.json(db.prepare(`${SELECT} ORDER BY pr.id DESC`).all());
+    return res.json(await all(`${SELECT} ORDER BY pr.id DESC`));
   }
-  const myId = intercessorIdForUser(req.user.id);
+  const myId = await intercessorIdForUser(req.user.id);
   if (myId === null) return res.json([]);
-  res.json(db.prepare(`${SELECT} WHERE pr.assigned_intercessor_id = ? ORDER BY pr.id DESC`).all(myId));
+  res.json(await all(`${SELECT} WHERE pr.assigned_intercessor_id = ? ORDER BY pr.id DESC`, [myId]));
 });
 
 // Senior Intercessor records a request on someone's behalf (e.g. told in person).
-router.post("/", requireAuth, requireSenior, (req, res) => {
+router.post("/", requireAuth, requireSenior, async (req, res) => {
   const { name, contact, request, category, priority, notes } = req.body || {};
   if (!name?.trim() || !request?.trim() || !category?.trim()) {
     return res.status(400).json({ error: "Name, request details and category are required." });
   }
-  const info = db.prepare(`
-    INSERT INTO prayer_requests (name, initials, contact, request, category, priority, status, date, notes)
-    VALUES (?, ?, ?, ?, ?, ?, 'Open', ?, ?)
-  `).run(name.trim(), initialsOf(name), contact?.trim() || "", request.trim(), category.trim(),
-    PRIORITIES.includes(priority) ? priority : "Normal", today(), notes?.trim() || "");
-  res.status(201).json(getOne(info.lastInsertRowid));
+  const info = await run(
+    `INSERT INTO prayer_requests (name, initials, contact, request, category, priority, status, date, notes)
+     VALUES (?, ?, ?, ?, ?, ?, 'Open', ?, ?)`,
+    [name.trim(), initialsOf(name), contact?.trim() || "", request.trim(), category.trim(),
+      PRIORITIES.includes(priority) ? priority : "Normal", today(), notes?.trim() || ""]
+  );
+  res.status(201).json(await getOne(info.lastInsertRowid));
 });
 
-router.patch("/:id", requireAuth, (req, res) => {
+router.patch("/:id", requireAuth, async (req, res) => {
   const id = Number(req.params.id);
-  const existing = db.prepare("SELECT * FROM prayer_requests WHERE id = ?").get(id);
+  const existing = await get("SELECT * FROM prayer_requests WHERE id = ?", [id]);
   if (!existing) return res.status(404).json({ error: "Prayer request not found." });
 
   const senior = isSenior(req.user);
@@ -95,7 +97,7 @@ router.patch("/:id", requireAuth, (req, res) => {
 
   if (!senior) {
     // An intercessor may only work on a request that is assigned to them, and may only record progress.
-    const myId = intercessorIdForUser(req.user.id);
+    const myId = await intercessorIdForUser(req.user.id);
     if (myId === null || existing.assigned_intercessor_id !== myId) {
       return res.status(404).json({ error: "Prayer request not found." });
     }
@@ -123,7 +125,7 @@ router.patch("/:id", requireAuth, (req, res) => {
     if (assignedIntercessorId === null) {
       nextAssigned = null;
     } else {
-      const target = db.prepare("SELECT id, status FROM intercessors WHERE id = ?").get(Number(assignedIntercessorId));
+      const target = await get("SELECT id, status FROM intercessors WHERE id = ?", [Number(assignedIntercessorId)]);
       if (!target) return res.status(404).json({ error: "Intercessor not found." });
       if (target.status !== "Active") return res.status(400).json({ error: "Only active intercessors can be assigned." });
       nextAssigned = target.id;
@@ -139,18 +141,19 @@ router.patch("/:id", requireAuth, (req, res) => {
     return res.status(400).json({ error: "A testimony is required before completing a prayer request." });
   }
 
-  db.prepare(`
-    UPDATE prayer_requests
-    SET status = ?, priority = ?, notes = ?, testimony = ?, assigned_intercessor_id = ?
-    WHERE id = ?
-  `).run(nextStatus, priority ?? existing.priority, notes === undefined ? existing.notes : String(notes),
-    nextTestimony || null, nextAssigned, id);
+  await run(
+    `UPDATE prayer_requests
+     SET status = ?, priority = ?, notes = ?, testimony = ?, assigned_intercessor_id = ?
+     WHERE id = ?`,
+    [nextStatus, priority ?? existing.priority, notes === undefined ? existing.notes : String(notes),
+      nextTestimony || null, nextAssigned, id]
+  );
 
-  res.json(getOne(id));
+  res.json(await getOne(id));
 });
 
-router.delete("/:id", requireAuth, requireSenior, (req, res) => {
-  const info = db.prepare("DELETE FROM prayer_requests WHERE id = ?").run(Number(req.params.id));
+router.delete("/:id", requireAuth, requireSenior, async (req, res) => {
+  const info = await run("DELETE FROM prayer_requests WHERE id = ?", [Number(req.params.id)]);
   if (info.changes === 0) return res.status(404).json({ error: "Prayer request not found." });
   res.status(204).end();
 });

@@ -5,7 +5,7 @@ schedules for Evangelical Restoration Church – Masoro.
 
 - **Frontend:** React 19 + TypeScript + Tailwind CSS v4 + Vite
 - **Backend:** Node.js + Express, REST API
-- **Database:** SQLite (via `better-sqlite3`), normalized relational schema
+- **Database:** libSQL / SQLite (via `@libsql/client`): a hosted Turso database in production, a local file in development
 - **Auth:** JWT sessions, bcrypt-hashed passwords
 
 ## Getting started
@@ -29,7 +29,8 @@ npm run server   # Express API only
 ```
 
 The first time the API server starts it creates an **empty** SQLite database
-(`server/erc_masoro.sqlite3` locally). There is no demo data.
+(`server/erc_masoro.sqlite3` locally). There is no demo data. Nothing else to
+configure for local development.
 
 ## Roles
 
@@ -49,17 +50,56 @@ SENIOR_EMAIL=pastor@yourchurch.org
 SENIOR_PASSWORD=choose-a-strong-password   # min 8 characters
 SENIOR_NAME="Full Name"
 
-# Option 2: run once from a shell that can reach the database
+# Option 2: run once from your computer. It uses whichever database your shell points at,
+# so for production set TURSO_DATABASE_URL / TURSO_AUTH_TOKEN first.
 npm run create-senior -- "Full Name" pastor@yourchurch.org "choose-a-strong-password"
 ```
 
 If an existing account uses that email it is promoted to Senior Intercessor and
 its password is set to the one supplied.
 
-## Deploying (Fly.io)
+## Deploying to Vercel
 
-SQLite is a file, so it needs a disk that survives restarts. `fly.toml` mounts
-a Fly volume at `/data` and points `DATABASE_PATH` at it. One-time setup:
+Vercel functions have no persistent disk, so the data lives in a hosted
+[Turso](https://turso.tech) database (free tier is plenty). Setup takes about
+five minutes:
+
+**1. Create the database** (Turso dashboard, or the CLI):
+
+```bash
+turso db create erc-masoro
+turso db show erc-masoro --url          # -> TURSO_DATABASE_URL  (libsql://...)
+turso db tokens create erc-masoro       # -> TURSO_AUTH_TOKEN
+```
+
+**2. Add environment variables** in Vercel: *Project -> Settings -> Environment Variables*
+(tick Production, Preview and Development):
+
+| Variable | Value |
+|---|---|
+| `TURSO_DATABASE_URL` | the `libsql://...` URL from step 1 |
+| `TURSO_AUTH_TOKEN` | the token from step 1 |
+| `SENIOR_EMAIL` | the pastor's login email |
+| `SENIOR_PASSWORD` | 8+ characters |
+| `SENIOR_NAME` | the pastor's full name |
+| `JWT_SECRET` | any long random string (`openssl rand -hex 32`) |
+
+**3. Redeploy** (*Deployments -> ... -> Redeploy*). Tables are created
+automatically on the first request, and the Senior Intercessor account is
+created from the `SENIOR_*` variables.
+
+**4. Check it:** open `https://<your-app>.vercel.app/api/health`. You should see
+`{"status":"ok", ... "database":"ok"}`. If you see `database: unavailable`, one of
+the `TURSO_*` variables is missing or wrong.
+
+How it fits together: Vite builds the frontend into `dist/` (served by
+Vercel's CDN). Every `/api/*` request is rewritten to the single function
+`api/index.js`, which runs the Express app in `server/`.
+
+## Deploying to Fly.io (alternative)
+
+You can instead run it as one long-lived server with the SQLite file on a disk.
+`fly.toml` mounts a Fly volume at `/data` and points `DATABASE_PATH` at it:
 
 ```bash
 fly volumes create erc_data --region iad --size 1
@@ -68,25 +108,17 @@ fly deploy
 fly scale count 1        # a volume attaches to a single machine
 ```
 
-`JWT_SECRET` is optional: if it isn't set, a random signing key is generated
-once and stored in the database.
-
-> **Vercel is not suitable for this app.** Serverless functions have no
-> persistent disk and run as many separate instances, so a SQLite file there is
-> wiped between requests and is not shared. Accounts created on one instance
-> "disappear" on the next, which shows up as "Invalid email or password" right
-> after signing up. To stay on Vercel you must replace SQLite with a hosted
-> database (Postgres/Turso). The `api/` wrappers and `vercel.json` are only
-> kept for that case.
-
 ### Environment variables
 
 | Variable | Purpose |
 |---|---|
-| `DATABASE_PATH` | Full path of the SQLite file (production: `/data/erc_masoro.sqlite3`) |
+| `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN` | Hosted database (**required on Vercel**) |
+| `DATABASE_PATH` | Local SQLite file path instead (Fly: `/data/erc_masoro.sqlite3`) |
 | `SENIOR_EMAIL`, `SENIOR_PASSWORD`, `SENIOR_NAME` | Creates/updates the Senior Intercessor account on startup |
-| `JWT_SECRET` | Optional signing key (otherwise generated and stored in the DB) |
-| `PORT` | HTTP port (`8080` on Fly) |
+| `JWT_SECRET` | Signing key for login tokens. Recommended; if unset, one is generated and stored in the database |
+| `PORT` | HTTP port outside Vercel (`8080` on Fly) |
+
+Copy `.env.example` for a template. Never commit a real `.env`.
 
 ### Resetting the database
 
@@ -97,6 +129,9 @@ rm server/erc_masoro.sqlite3*
 npm run server
 ```
 
+On Turso, drop the tables from the Turso shell (`turso db shell erc-masoro`) or
+create a fresh database and update the two `TURSO_*` variables.
+
 ## Project structure
 
 ```
@@ -105,7 +140,7 @@ src/                  React frontend
                        Intercessors, Schedule, Sidebar)
   lib/api.ts           Frontend API client (fetch wrapper, JWT handling)
 server/                Express backend
-  db.js                SQLite schema
+  db.js                Database connection + schema (libSQL)
   auth.js              JWT sign/verify + role middleware
   seniorAccount.js     Creates the Senior Intercessor account
   scripts/             create-senior.js
@@ -136,19 +171,13 @@ Everything except the three public routes needs `Authorization: Bearer <token>`.
 
 ## Troubleshooting
 
-**`npm install` fails on `better-sqlite3` with a `node-gyp` / Python error.**
-`better-sqlite3` ships prebuilt binaries for common platforms, downloaded
-automatically on install — this error means npm fell back to compiling it
-from source and couldn't find a C++ build toolchain. Fixes, in order of
-preference:
-1. Make sure you're on Node.js 18 or newer (`node -v`) and have a normal
-   internet connection, then try `npm install` again — a transient network
-   hiccup during the prebuilt-binary download is the most common cause.
-2. On Windows: install the "Desktop development with C++" workload from the
-   [Visual Studio Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/),
-   or run `npm install --global windows-build-tools` (older Node versions).
-3. On macOS: run `xcode-select --install`.
-4. On Linux: `sudo apt install build-essential python3`.
+**"Invalid email or password" right after signing up on Vercel / `/api/health` says `database: unavailable`.**
+The `TURSO_DATABASE_URL` / `TURSO_AUTH_TOKEN` variables are missing or wrong, or you
+changed them without redeploying. Fix them in Vercel and redeploy.
+
+**Can't log in as the Senior Intercessor.** Check `SENIOR_EMAIL` / `SENIOR_PASSWORD`
+in Vercel (password must be 8+ characters), then redeploy. The account is
+created/updated on startup.
 
 **Port already in use.** The frontend defaults to port 8443 and the API to
 5174. Override with `PORT=3000 npm run client` or `API_PORT=4000 npm run dev`

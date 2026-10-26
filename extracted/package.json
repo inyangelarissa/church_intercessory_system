@@ -7,14 +7,15 @@
     "dev": "concurrently -n CLIENT,API -c blue,magenta \"vite\" \"npm:server\"",
     "client": "vite",
     "server": "node server/index.js",
+    "start": "node server/index.js",
     "build": "vite build",
     "preview": "vite preview",
     "format": "oxfmt",
     "create-senior": "node server/scripts/create-senior.js"
   },
   "dependencies": {
+    "@libsql/client": "^0.18.0",
     "bcryptjs": "^3.0.3",
-    "better-sqlite3": "^13.0.3",
     "cors": "^2.8.6",
     "express": "^5.2.1",
     "jsonwebtoken": "^9.0.3",

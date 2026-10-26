@@ -1,31 +1,34 @@
-import Database from "better-sqlite3";
+import { createClient } from "@libsql/client";
 import path from "path";
-import os from "os";
 import fs from "fs";
 import { fileURLToPath } from "url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-// Where the SQLite file lives.
-//  - DATABASE_PATH (recommended in production, e.g. /data/erc_masoro.sqlite3 on a Fly volume)
-//  - otherwise ./server/erc_masoro.sqlite3 for local development
-//  - on Vercel the filesystem is read-only except /tmp, which is wiped and NOT shared between
-//    serverless instances. Accounts created there will "disappear". Do not use Vercel with SQLite.
-const onVercel = process.env.VERCEL === "1";
-const DB_PATH = process.env.DATABASE_PATH
-  || (onVercel ? path.join(os.tmpdir(), "erc_masoro.sqlite3") : path.join(__dirname, "erc_masoro.sqlite3"));
+// ---------------------------------------------------------------------------------------------
+// Where the database lives
+//  - TURSO_DATABASE_URL (+ TURSO_AUTH_TOKEN): hosted libSQL/Turso database. REQUIRED on Vercel,
+//    because serverless functions have no persistent disk.
+//  - DATABASE_PATH: a local SQLite file (e.g. /data/erc_masoro.sqlite3 on a Fly volume).
+//  - otherwise ./server/erc_masoro.sqlite3 for local development.
+// ---------------------------------------------------------------------------------------------
+const onVercel = Boolean(process.env.VERCEL);
 
-if (onVercel && !process.env.DATABASE_PATH) {
-  console.warn("[db] Running on Vercel with a temporary SQLite file. Data (including sign-ups) will be lost between requests. Deploy on a host with a persistent disk (see README).");
+function resolveConfig() {
+  if (process.env.TURSO_DATABASE_URL) {
+    return { url: process.env.TURSO_DATABASE_URL, authToken: process.env.TURSO_AUTH_TOKEN || undefined };
+  }
+  if (onVercel) {
+    throw new Error(
+      "TURSO_DATABASE_URL is not set. Vercel has no persistent disk, so this app needs a hosted database. See README (Deploying to Vercel)."
+    );
+  }
+  const file = process.env.DATABASE_PATH || path.join(__dirname, "erc_masoro.sqlite3");
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  return { url: `file:${file}` };
 }
 
-fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
-
-export const db = new Database(DB_PATH);
-db.pragma("journal_mode = WAL");
-db.pragma("foreign_keys = ON");
-
-db.exec(`
+const SCHEMA = `
 CREATE TABLE IF NOT EXISTS users (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL,
@@ -75,8 +78,8 @@ CREATE TABLE IF NOT EXISTS prayer_requests (
   status TEXT NOT NULL DEFAULT 'Open' CHECK (status IN ('Open','Assigned','In Prayer','Completed')),
   date TEXT NOT NULL,
   assigned_intercessor_id INTEGER REFERENCES intercessors(id) ON DELETE SET NULL,
-    notes TEXT,
-    testimony TEXT
+  notes TEXT,
+  testimony TEXT
 );
 
 CREATE TABLE IF NOT EXISTS schedule_sessions (
@@ -119,16 +122,100 @@ CREATE TABLE IF NOT EXISTS activity_records (
   notes TEXT,
   testimonies INTEGER NOT NULL DEFAULT 0
 );
-`);
 
-const prayerRequestColumns = db.prepare("PRAGMA table_info(prayer_requests)").all().map(column => column.name);
-if (!prayerRequestColumns.includes("testimony")) {
-  db.exec("ALTER TABLE prayer_requests ADD COLUMN testimony TEXT");
+CREATE TABLE IF NOT EXISTS rate_limits (
+  bucket TEXT NOT NULL,
+  ts INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_rate_limits_bucket ON rate_limits(bucket, ts);
+`;
+
+let client = null;
+let readyPromise = null;
+
+// Turns a libSQL result row into a plain JSON-safe object.
+const toObject = (columns, row) => Object.fromEntries(columns.map((c, i) => [c, row[i]]));
+
+// Query helpers that work on both the client and an open transaction.
+function helpers(executor) {
+  const exec = (sql, args = []) => executor.execute({ sql, args });
+  return {
+    /** All rows as plain objects. */
+    async all(sql, args = []) {
+      const r = await exec(sql, args);
+      return r.rows.map(row => toObject(r.columns, row));
+    },
+    /** First row, or undefined. */
+    async get(sql, args = []) {
+      const r = await exec(sql, args);
+      return r.rows[0] ? toObject(r.columns, r.rows[0]) : undefined;
+    },
+    /** INSERT / UPDATE / DELETE -> { changes, lastInsertRowid } */
+    async run(sql, args = []) {
+      const r = await exec(sql, args);
+      return {
+        changes: r.rowsAffected,
+        lastInsertRowid: r.lastInsertRowid === undefined ? null : Number(r.lastInsertRowid),
+      };
+    },
+  };
 }
 
-// Older versions used the role "Admin" for the church administrator.
-db.exec("UPDATE users SET role = 'Senior Intercessor' WHERE role = 'Admin'");
-// A request that is "Assigned"/"In Prayer" must have an intercessor; fix any leftovers.
-db.exec("UPDATE prayer_requests SET status = 'Open' WHERE assigned_intercessor_id IS NULL AND status IN ('Assigned','In Prayer')");
+async function init() {
+  client = createClient(resolveConfig());
+  if (client.protocol === "file") await client.execute("PRAGMA foreign_keys = ON");
+  await client.executeMultiple(SCHEMA);
 
-console.log(`[db] Using SQLite database at ${DB_PATH}`);
+  // Lightweight migrations for databases created by older versions.
+  const cols = (await client.execute("PRAGMA table_info(prayer_requests)")).rows.map(r => r.name);
+  if (!cols.includes("testimony")) await client.execute("ALTER TABLE prayer_requests ADD COLUMN testimony TEXT");
+
+  // Older versions used the role "Admin" for the church administrator.
+  await client.execute("UPDATE users SET role = 'Senior Intercessor' WHERE role = 'Admin'");
+  // A request that is "Assigned"/"In Prayer" must have an intercessor; fix any leftovers.
+  await client.execute(
+    "UPDATE prayer_requests SET status = 'Open' WHERE assigned_intercessor_id IS NULL AND status IN ('Assigned','In Prayer')"
+  );
+}
+
+/** Resolves once the database is connected and the schema exists. Safe to call on every request. */
+export function ready() {
+  if (!readyPromise) {
+    readyPromise = init().catch(err => {
+      readyPromise = null; // allow a retry on the next request instead of failing forever
+      throw err;
+    });
+  }
+  return readyPromise;
+}
+
+async function base() {
+  await ready();
+  return helpers(client);
+}
+
+export const all = async (sql, args) => (await base()).all(sql, args);
+export const get = async (sql, args) => (await base()).get(sql, args);
+export const run = async (sql, args) => (await base()).run(sql, args);
+
+/**
+ * Run several statements atomically. `fn` receives { all, get, run } bound to the transaction;
+ * if it throws, everything is rolled back.
+ */
+export async function transaction(fn) {
+  await ready();
+  const tx = await client.transaction("write");
+  try {
+    const result = await fn(helpers(tx));
+    await tx.commit();
+    return result;
+  } catch (err) {
+    await tx.rollback().catch(() => {});
+    throw err;
+  } finally {
+    tx.close();
+  }
+}
+
+export const databaseDescription = () =>
+  process.env.TURSO_DATABASE_URL ? "Turso/libSQL (remote)" : `SQLite file${process.env.DATABASE_PATH ? ` (${process.env.DATABASE_PATH})` : ""}`;

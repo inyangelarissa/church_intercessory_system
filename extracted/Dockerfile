@@ -2,8 +2,8 @@ FROM node:22-bookworm-slim
 
 WORKDIR /app
 
-COPY package.json pnpm-lock.yaml ./
-RUN npm install
+COPY package.json package-lock.json ./
+RUN npm ci
 
 COPY . .
 RUN npm run build
