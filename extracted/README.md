@@ -1,7 +1,7 @@
 # ERC Masoro — Intercession Management System
 
-A full-stack web app for managing prayer requests, intercessors, prayer
-schedules and activity records for Evangelical Restoration Church – Masoro.
+A full-stack web app for managing prayer requests, intercessors, and prayer
+schedules for Evangelical Restoration Church – Masoro.
 
 - **Frontend:** React 19 + TypeScript + Tailwind CSS v4 + Vite
 - **Backend:** Node.js + Express, REST API
@@ -102,7 +102,7 @@ npm run server
 ```
 src/                  React frontend
   components/         Page components (Home, Auth, Dashboard, PrayerRequests,
-                       Intercessors, Schedule, ActivityRecords, Sidebar)
+                       Intercessors, Schedule, Sidebar)
   lib/api.ts           Frontend API client (fetch wrapper, JWT handling)
 server/                Express backend
   db.js                SQLite schema
@@ -111,7 +111,7 @@ server/                Express backend
   scripts/             create-senior.js
   index.js              App entry point, mounts routes
   routes/               One file per resource (auth, prayerRequests,
-                       intercessors, schedule, activityRecords)
+                       intercessors, schedule)
 ```
 
 ## API overview
@@ -133,7 +133,6 @@ Everything except the three public routes needs `Authorization: Bearer <token>`.
 | POST | `/api/intercessors` | Senior | Register an intercessor |
 | PATCH | `/api/intercessors/:id` | Senior | Mark Active / Inactive |
 | GET / POST | `/api/schedule` | any | Prayer sessions |
-| GET / POST | `/api/activity-records` | any | Session logs |
 
 ## Troubleshooting
 

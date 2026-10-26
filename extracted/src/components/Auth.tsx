@@ -10,13 +10,14 @@ interface AuthProps {
 
 type Mode = "login" | "signup";
 type FormState = "idle" | "submitting";
+type SignupRole = "Intercessor" | "Senior Intercessor";
 
 export default function Auth({ onAuthenticated, onBack }: AuthProps) {
   const [mode, setMode] = useState<Mode>("login");
   const [formState, setFormState] = useState<FormState>("idle");
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [login, setLogin] = useState({ email: "", password: "", remember: true });
-  const [signup, setSignup] = useState({
+  const [signup, setSignup] = useState<{ name: string; email: string; phone: string; role: SignupRole; password: string; confirm: string }>({
     name: "", email: "", phone: "", role: "Intercessor", password: "", confirm: "",
   });
 
@@ -72,6 +73,7 @@ export default function Auth({ onAuthenticated, onBack }: AuthProps) {
 
     api.auth.signup({
       name: signup.name.trim(), email: signup.email.trim(), phone: signup.phone.trim(),
+      role: signup.role,
       password: signup.password,
     })
       .then(({ token, user }) => {
@@ -110,7 +112,7 @@ export default function Auth({ onAuthenticated, onBack }: AuthProps) {
             Coordinated prayer, covering the whole congregation.
           </h2>
           <p className="text-sm leading-relaxed" style={{ color: "rgba(255,255,255,0.7)" }}>
-            Sign in to manage prayer requests, intercessors, schedules, and activity records for ERC Masoro.
+            Sign in to manage prayer requests, intercessors, and schedules for ERC Masoro.
           </p>
         </div>
 
@@ -225,6 +227,17 @@ export default function Auth({ onAuthenticated, onBack }: AuthProps) {
                       placeholder="+250 7XX XXX XXX"
                     />
                   </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold mb-1.5" style={labelCls}>Join as</label>
+                  <select
+                    value={signup.role}
+                    onChange={e => setSignup({ ...signup, role: e.target.value as SignupRole })}
+                    style={inputCls}
+                  >
+                    <option value="Intercessor">Intercessor</option>
+                    <option value="Senior Intercessor">Senior Intercessor / Leader</option>
+                  </select>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>

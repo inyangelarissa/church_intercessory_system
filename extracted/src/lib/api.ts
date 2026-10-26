@@ -94,7 +94,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 
 export const api = {
   auth: {
-    signup: (payload: { name: string; email: string; phone?: string; password: string }) =>
+    signup: (payload: { name: string; email: string; phone?: string; role: "Intercessor" | "Senior Intercessor"; password: string }) =>
       request<{ token: string; user: AuthUser }>("/auth/signup", { method: "POST", body: JSON.stringify(payload) }),
     login: (payload: { email: string; password: string }) =>
       request<{ token: string; user: AuthUser }>("/auth/login", { method: "POST", body: JSON.stringify(payload) }),
@@ -121,8 +121,5 @@ export const api = {
   schedule: {
     list: () => request<any[]>("/schedule"),
     create: (payload: any) => request<any>("/schedule", { method: "POST", body: JSON.stringify(payload) }),
-  },
-  activityRecords: {
-    list: () => request<any[]>("/activity-records"),
   },
 };

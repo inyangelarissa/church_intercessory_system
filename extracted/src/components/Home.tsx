@@ -9,8 +9,7 @@ const features = [
   { icon: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /></svg>, title: "Prayer Request Management", desc: "Capture, categorize, and track every prayer need with priority levels, status updates, and intercessor assignments." },
   { icon: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" /></svg>, title: "Intercessor Coordination", desc: "Register and manage your prayer team, track specializations, availability, and assignment history." },
   { icon: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" /></svg>, title: "Session Scheduling", desc: "Organize weekly prayer sessions, vigils, and prayer watches with venue, focus, and intercessor assignments." },
-  { icon: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /></svg>, title: "Activity Records", desc: "Log every session outcome, record testimonies and breakthroughs, and build a rich history of answered prayers." },
-  { icon: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12" /></svg>, title: "Live Dashboard", desc: "Real-time overview of open requests, active intercessors, upcoming sessions, and monthly prayer activity." },
+  { icon: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12" /></svg>, title: "Live Dashboard", desc: "Real-time overview of prayer requests, active intercessors, upcoming sessions, assignments, and testimonies." },
   { icon: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><path d="M12 6v6l4 2" /></svg>, title: "24/7 Prayer Coverage", desc: "Ensure round-the-clock intercession with structured shifts, automatic reminders, and team accountability." },
 ];
 
@@ -120,25 +119,6 @@ export default function Home({ onEnter }: HomeProps) {
         </div>
       </section>
 
-      {/* ── Stats Banner ─────────────────────────────── */}
-      <section style={{ background: "#0a1628" }}>
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 py-12 sm:py-16 grid grid-cols-2 gap-6 sm:gap-8 md:grid-cols-4">
-          {[
-            { value: "47", label: "Active Intercessors", suffix: "+" },
-            { value: "1,204", label: "Prayers Answered", suffix: "" },
-            { value: "34", label: "Sessions / Month", suffix: "" },
-            { value: "8", label: "Prayer Watches / Week", suffix: "" },
-          ].map((stat, i) => (
-            <div key={i} className="text-center animate-count-up" style={{ animationDelay: `${i * 120}ms` }}>
-              <p className="text-3xl sm:text-4xl font-bold mb-1" style={{ fontFamily: "'Cinzel', serif", color: "#fff" }}>
-                {stat.value}<span style={{ color: "#8b0000" }}>{stat.suffix}</span>
-              </p>
-              <p className="text-xs sm:text-sm" style={{ color: "rgba(255,255,255,0.45)", fontFamily: "'Outfit', sans-serif" }}>{stat.label}</p>
-            </div>
-          ))}
-        </div>
-      </section>
-
       {/* ── Features ─────────────────────────────────── */}
       <section className="py-16 sm:py-24 px-4 sm:px-6" style={{ background: "#f8faff" }}>
         <div className="max-w-6xl mx-auto">
@@ -175,7 +155,6 @@ export default function Home({ onEnter }: HomeProps) {
               { step: "01", title: "Submit Request", desc: "Congregation members submit prayer needs through the coordinator or online." },
               { step: "02", title: "Assign Intercessor", desc: "Admin assigns the request to the right intercessor based on specialty." },
               { step: "03", title: "Schedule Session", desc: "Prayer sessions are organized and intercessors are notified." },
-              { step: "04", title: "Record Outcome", desc: "Sessions are logged with attendance, requests covered, and testimonies." },
             ].map((s, i) => (
               <div key={i} className="flex flex-col items-center text-center animate-fade-up" style={{ animationDelay: `${i * 120}ms` }}>
                 <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-full flex items-center justify-center text-lg sm:text-xl font-bold mb-4 z-10"

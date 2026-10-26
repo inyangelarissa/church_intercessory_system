@@ -41,13 +41,10 @@ export default function PrayerRequests({ user }: { user: AuthUser | null }) {
   const [catFilter, setCatFilter] = useState("All");
   const [statusFilter, setStatusFilter] = useState<string>("All");
   const [selected, setSelected] = useState<Request | null>(null);
-  const [showForm, setShowForm] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
   const [savingProgress, setSavingProgress] = useState(false);
   const [progressStatus, setProgressStatus] = useState<Status>("Open");
   const [progressNotes, setProgressNotes] = useState("");
   const [testimony, setTestimony] = useState("");
-  const [newReq, setNewReq] = useState({ name: "", contact: "", request: "", category: "Healing", priority: "Normal" as Priority });
 
   useEffect(() => {
     api.prayerRequests.list()
@@ -68,22 +65,6 @@ export default function PrayerRequests({ user }: { user: AuthUser | null }) {
     (catFilter === "All" || r.category === catFilter) &&
     (statusFilter === "All" || r.status === statusFilter)
   );
-
-  async function submitRequest() {
-    if (!newReq.name.trim() || !newReq.request.trim()) return;
-    setSubmitting(true);
-    setError("");
-    try {
-      const created = await api.prayerRequests.create(newReq);
-      setRequests((prev) => [created as Request, ...prev]);
-      setNewReq({ name: "", contact: "", request: "", category: "Healing", priority: "Normal" });
-      setShowForm(false);
-    } catch (e) {
-      setError(errorMessage(e));
-    } finally {
-      setSubmitting(false);
-    }
-  }
 
   async function assignRequest(intercessorId: string) {
     if (!selected || !senior) return;
@@ -140,61 +121,10 @@ export default function PrayerRequests({ user }: { user: AuthUser | null }) {
           <h1 className="text-2xl sm:text-3xl font-bold" style={{ fontFamily: "'Cinzel', serif", color: "#0a1628" }}>{senior ? "Prayer Requests" : "My Assigned Prayer Requests"}</h1>
           <p className="text-sm mt-1" style={{ color: "#94a3b8" }}>{loading ? "Loading…" : senior ? `${requests.length} total requests recorded` : `${requests.length} request${requests.length === 1 ? "" : "s"} assigned to you`}</p>
         </div>
-        {senior && <button
-          onClick={() => setShowForm(!showForm)}
-          className="px-5 py-3 rounded-xl text-sm font-semibold transition-all hover:scale-105 hover:shadow-lg w-full sm:w-auto"
-          style={{ background: "#8b0000", color: "#fff", boxShadow: "0 4px 18px rgba(139,0,0,0.3)" }}
-        >
-          + New Request
-        </button>}
       </div>
 
       {error && (
         <p className="rounded-lg px-3 py-2 text-sm" style={{ background: "rgba(139,0,0,0.08)", color: "#8b0000" }}>{error}</p>
-      )}
-
-      {/* New Request Form */}
-      {senior && showForm && (
-        <div className="animate-scale-in rounded-2xl border bg-white p-6 space-y-4" style={{ borderColor: "rgba(139,0,0,0.2)", boxShadow: "0 8px 32px rgba(10,22,40,0.08)" }}>
-          <div className="flex items-center gap-2 mb-2">
-            <div className="w-1 h-5 rounded-full" style={{ background: "#8b0000" }} />
-            <h3 className="font-bold text-sm" style={{ fontFamily: "'Cinzel', serif", color: "#0a1628" }}>Submit New Prayer Request</h3>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-medium mb-1.5" style={{ color: "#64748b" }}>Full Name *</label>
-              <input value={newReq.name} onChange={e => setNewReq({ ...newReq, name: e.target.value })} style={inputStyle} placeholder="Congregant name" />
-            </div>
-            <div>
-              <label className="block text-xs font-medium mb-1.5" style={{ color: "#64748b" }}>Contact</label>
-              <input value={newReq.contact} onChange={e => setNewReq({ ...newReq, contact: e.target.value })} style={inputStyle} placeholder="+254 7XX XXX XXX" />
-            </div>
-          </div>
-          <div>
-            <label className="block text-xs font-medium mb-1.5" style={{ color: "#64748b" }}>Prayer Request *</label>
-            <textarea value={newReq.request} onChange={e => setNewReq({ ...newReq, request: e.target.value })} rows={3} style={{ ...inputStyle, resize: "none" }} placeholder="Describe the prayer need in detail..." />
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-medium mb-1.5" style={{ color: "#64748b" }}>Category</label>
-              <select value={newReq.category} onChange={e => setNewReq({ ...newReq, category: e.target.value })} style={inputStyle}>
-                {categories.filter(c => c !== "All").map(c => <option key={c}>{c}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="block text-xs font-medium mb-1.5" style={{ color: "#64748b" }}>Priority</label>
-              <select value={newReq.priority} onChange={e => setNewReq({ ...newReq, priority: e.target.value as Priority })} style={inputStyle}>
-                {["Normal", "High", "Urgent"].map(p => <option key={p}>{p}</option>)}
-              </select>
-            </div>
-          </div>
-          <div className="flex gap-3 pt-1">
-            <button onClick={submitRequest} disabled={submitting} className="px-5 py-2.5 rounded-xl text-sm font-semibold transition-all hover:scale-105 disabled:opacity-60" style={{ background: "#8b0000", color: "#fff" }}>
-              {submitting ? "Submitting..." : "Submit Request"}
-            </button>
-            <button onClick={() => setShowForm(false)} className="px-5 py-2.5 rounded-xl text-sm font-semibold transition-colors hover:bg-slate-100" style={{ color: "#64748b", border: "1px solid rgba(10,22,40,0.1)" }}>Cancel</button>
-          </div>
-        </div>
       )}
 
       {/* Filters */}

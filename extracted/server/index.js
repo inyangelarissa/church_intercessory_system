@@ -7,7 +7,6 @@ import authRoutes from "./routes/auth.js";
 import prayerRequestRoutes from "./routes/prayerRequests.js";
 import intercessorRoutes from "./routes/intercessors.js";
 import scheduleRoutes from "./routes/schedule.js";
-import activityRecordRoutes from "./routes/activityRecords.js";
 import { requireAuth, isSenior, intercessorIdForUser } from "./auth.js";
 import { bootstrapSenior } from "./seniorAccount.js";
 
@@ -36,7 +35,6 @@ app.use("/api/auth", authRoutes);
 app.use("/api/prayer-requests", prayerRequestRoutes);
 app.use("/api/intercessors", intercessorRoutes);
 app.use("/api/schedule", scheduleRoutes);
-app.use("/api/activity-records", activityRecordRoutes);
 
 // Aggregate dashboard stats, computed live from the database.
 // Senior Intercessor sees congregation-wide numbers; an Intercessor sees numbers for their own assignments.

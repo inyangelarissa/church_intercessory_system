@@ -5,14 +5,13 @@ import Dashboard from "./components/Dashboard";
 import PrayerRequests from "./components/PrayerRequests";
 import Intercessors from "./components/Intercessors";
 import Schedule from "./components/Schedule";
-import ActivityRecords from "./components/ActivityRecords";
 import Sidebar from "./components/Sidebar";
 import ercLogo from "./assets/erc-logo.png";
 import { api, getStoredUser, setSession, getToken, clearSession, type AuthUser } from "./lib/api";
 
-export type View = "home" | "auth" | "dashboard" | "requests" | "intercessors" | "schedule" | "records";
+export type View = "home" | "auth" | "dashboard" | "requests" | "intercessors" | "schedule";
 
-const PROTECTED_VIEWS: View[] = ["dashboard", "requests", "intercessors", "schedule", "records"];
+const PROTECTED_VIEWS: View[] = ["dashboard", "requests", "intercessors", "schedule"];
 
 export default function App() {
   const [activeView, setActiveView] = useState<View>("home");
@@ -85,7 +84,6 @@ export default function App() {
     requests: <PrayerRequests user={user} />,
     intercessors: <Intercessors user={user} />,
     schedule: <Schedule />,
-    records: <ActivityRecords />,
   };
 
   if (isAuth) {
