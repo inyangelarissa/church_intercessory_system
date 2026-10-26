@@ -1,3 +1,9 @@
 node_modules/
 dist/
 .env
+
+# Local SQLite databases must never be committed or baked into images
+server/*.sqlite3
+server/*.sqlite3-shm
+server/*.sqlite3-wal
+*.sqlite3

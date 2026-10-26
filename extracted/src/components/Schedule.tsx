@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { api, isOfflineMode } from "../lib/api";
+import { api, errorMessage } from "../lib/api";
 
 interface Session {
   id: number; title: string; day: string; time: string; duration: string;
@@ -22,7 +22,7 @@ const focusDot: Record<string, string> = {
 export default function Schedule() {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [loading, setLoading] = useState(true);
-  const [offline, setOffline] = useState(false);
+  const [error, setError] = useState("");
   const [view, setView] = useState<"week" | "list">("week");
   const [selected, setSelected] = useState<Session | null>(null);
   const [showAdd, setShowAdd] = useState(false);
@@ -32,7 +32,7 @@ export default function Schedule() {
   useEffect(() => {
     api.schedule.list()
       .then((rows) => setSessions(rows as Session[]))
-      .catch(() => setOffline(isOfflineMode()))
+      .catch((e) => setError(errorMessage(e)))
       .finally(() => setLoading(false));
   }, []);
 
@@ -42,15 +42,16 @@ export default function Schedule() {
   async function submitSession() {
     if (!newSession.title.trim() || !newSession.time.trim()) return;
     setSubmitting(true);
+    setError("");
     try {
       const created = await api.schedule.create(newSession);
       setSessions((prev) => [...prev, created as Session]);
-    } catch {
-      setOffline(true);
-    } finally {
-      setSubmitting(false);
       setNewSession({ title: "", day: "Monday", time: "", duration: "1 hr", venue: "Main Sanctuary", focus: "Congregation Requests" });
       setShowAdd(false);
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setSubmitting(false);
     }
   }
 
@@ -60,10 +61,10 @@ export default function Schedule() {
         <div>
           <div className="flex items-center gap-2 mb-1">
             <p className="text-xs uppercase tracking-widest font-semibold" style={{ color: "#8b0000", fontFamily: "'JetBrains Mono', monospace" }}>Module 03</p>
-            {offline && <span className="text-xs px-2 py-0.5 rounded-full font-medium" style={{ background: "rgba(180,83,9,0.1)", color: "#b45309" }}>Demo data — API not connected</span>}
           </div>
           <h1 className="text-2xl sm:text-3xl font-bold" style={{ fontFamily: "'Cinzel', serif", color: "#0a1628" }}>Prayer Schedule</h1>
           <p className="text-sm mt-1" style={{ color: "#94a3b8" }}>{loading ? "Loading…" : `${sessions.length} sessions scheduled this week`}</p>
+          {error && <p className="mt-3 rounded-lg px-3 py-2 text-sm" style={{ background: "rgba(139,0,0,0.08)", color: "#8b0000" }}>{error}</p>}
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {(["week", "list"] as const).map(v => (

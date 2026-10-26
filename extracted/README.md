@@ -28,35 +28,69 @@ npm run client   # Vite frontend only
 npm run server   # Express API only
 ```
 
-The first time the API server starts, it creates `server/erc_masoro.sqlite3`
-and seeds it with demo data (intercessors, prayer requests, a weekly
-schedule, and activity records) matching what's shown in the UI.
+The first time the API server starts it creates an **empty** SQLite database
+(`server/erc_masoro.sqlite3` locally). There is no demo data.
 
-For production deployment, the Docker image builds the Vite frontend and
-starts the Express server. The frontend and `/api` endpoints are served from
-the same origin, so signup and login do not require a separate API URL.
+## Roles
 
-The project also includes Vercel serverless functions in `api/`.
-When deploying on Vercel, set the project root to this directory (the
-directory containing `package.json`) and deploy again. This exposes
-`/api/auth/signup` and `/api/auth/login` alongside the Vite frontend.
-
-Vercel's `/tmp` storage is used for the SQLite file in the serverless
-environment so the function can start successfully. That storage is
-ephemeral; configure a persistent database such as Vercel Postgres or
-Turso before using this as a production system.
-
-### Demo login
-
-| Email | Password |
+| Role | What they can do |
 |---|---|
-| `admin@ercmasoro.org` | `ercmasoro2026` |
+| **Senior Intercessor** (admin) | Sees every prayer request. The **only** role that assigns requests to intercessors, marks intercessors Active/Inactive, registers intercessors, records requests on someone's behalf, and deletes requests. |
+| **Intercessor** | Signs up from the app. Sees **only the requests assigned to them** and can update their status, progress notes and testimony. Cannot assign, reassign or change priority, and cannot change anyone's Active/Inactive status. |
+| **Congregation** (no login) | Submits a prayer request from the home page. It lands on the Senior Intercessor's dashboard under "New Requests Awaiting Assignment". |
 
-You can also sign up a new account from the app's Sign Up tab.
+Public sign-up **always** creates a regular Intercessor. The Senior Intercessor
+account can only be created on the server:
+
+```bash
+# Option 1 (recommended for deployments): set environment variables.
+# The account is created/updated every time the server starts.
+SENIOR_EMAIL=pastor@yourchurch.org
+SENIOR_PASSWORD=choose-a-strong-password   # min 8 characters
+SENIOR_NAME="Full Name"
+
+# Option 2: run once from a shell that can reach the database
+npm run create-senior -- "Full Name" pastor@yourchurch.org "choose-a-strong-password"
+```
+
+If an existing account uses that email it is promoted to Senior Intercessor and
+its password is set to the one supplied.
+
+## Deploying (Fly.io)
+
+SQLite is a file, so it needs a disk that survives restarts. `fly.toml` mounts
+a Fly volume at `/data` and points `DATABASE_PATH` at it. One-time setup:
+
+```bash
+fly volumes create erc_data --region iad --size 1
+fly secrets set SENIOR_EMAIL=pastor@yourchurch.org SENIOR_PASSWORD='...' SENIOR_NAME='Full Name'
+fly deploy
+fly scale count 1        # a volume attaches to a single machine
+```
+
+`JWT_SECRET` is optional: if it isn't set, a random signing key is generated
+once and stored in the database.
+
+> **Vercel is not suitable for this app.** Serverless functions have no
+> persistent disk and run as many separate instances, so a SQLite file there is
+> wiped between requests and is not shared. Accounts created on one instance
+> "disappear" on the next, which shows up as "Invalid email or password" right
+> after signing up. To stay on Vercel you must replace SQLite with a hosted
+> database (Postgres/Turso). The `api/` wrappers and `vercel.json` are only
+> kept for that case.
+
+### Environment variables
+
+| Variable | Purpose |
+|---|---|
+| `DATABASE_PATH` | Full path of the SQLite file (production: `/data/erc_masoro.sqlite3`) |
+| `SENIOR_EMAIL`, `SENIOR_PASSWORD`, `SENIOR_NAME` | Creates/updates the Senior Intercessor account on startup |
+| `JWT_SECRET` | Optional signing key (otherwise generated and stored in the DB) |
+| `PORT` | HTTP port (`8080` on Fly) |
 
 ### Resetting the database
 
-Delete the SQLite files and restart the server to reseed from scratch:
+Delete the SQLite files and restart the server:
 
 ```bash
 rm server/erc_masoro.sqlite3*
@@ -69,11 +103,12 @@ npm run server
 src/                  React frontend
   components/         Page components (Home, Auth, Dashboard, PrayerRequests,
                        Intercessors, Schedule, ActivityRecords, Sidebar)
-  lib/api.ts           Frontend API client (fetch wrapper, JWT handling,
-                       offline/demo-mode fallback)
+  lib/api.ts           Frontend API client (fetch wrapper, JWT handling)
 server/                Express backend
-  db.js                SQLite schema + seed data
-  auth.js              JWT sign/verify middleware
+  db.js                SQLite schema
+  auth.js              JWT sign/verify + role middleware
+  seniorAccount.js     Creates the Senior Intercessor account
+  scripts/             create-senior.js
   index.js              App entry point, mounts routes
   routes/               One file per resource (auth, prayerRequests,
                        intercessors, schedule, activityRecords)
@@ -81,30 +116,24 @@ server/                Express backend
 
 ## API overview
 
-All routes except `/api/auth/signup` and `/api/auth/login` require a
-`Authorization: Bearer <token>` header.
+Everything except the three public routes needs `Authorization: Bearer <token>`.
 
-| Method | Path | Description |
-|---|---|---|
-| POST | `/api/auth/signup` | Create an account |
-| POST | `/api/auth/login` | Log in, returns a JWT |
-| GET | `/api/auth/me` | Current user |
-| GET | `/api/dashboard/stats` | Aggregate counts for the dashboard |
-| GET / POST / PATCH / DELETE | `/api/prayer-requests` | Prayer requests |
-| GET / POST / PATCH | `/api/intercessors` | Intercessors |
-| GET / POST | `/api/schedule` | Prayer sessions |
-| GET / POST | `/api/activity-records` | Session logs |
-
-## "Offline / demo mode"
-
-The frontend is built to still work as a **static, backend-less demo** (this
-is what you see if the app is opened as a plain HTML file, e.g. the
-published preview link, with no Express server running). If a request to the
-API fails to connect, the app falls back to a small built-in dataset and
-shows a "Demo data — API not connected" badge. Signing in without a reachable
-API creates a local demo session instead of a real one. This only matters
-for viewing the UI without running `npm run dev` — for the app to actually
-persist data, run the real backend.
+| Method | Path | Who | Description |
+|---|---|---|---|
+| POST | `/api/auth/signup` | public | Create an Intercessor account |
+| POST | `/api/auth/login` | public | Log in, returns a JWT |
+| POST | `/api/prayer-requests/public` | public | Congregation submits a request (rate-limited) |
+| GET | `/api/auth/me` | any | Current user |
+| GET | `/api/dashboard/stats` | any | Counts (scoped to own assignments for Intercessors) |
+| GET | `/api/prayer-requests` | any | Senior: all. Intercessor: only those assigned to them |
+| POST | `/api/prayer-requests` | Senior | Record a request on someone's behalf |
+| PATCH | `/api/prayer-requests/:id` | Senior / assigned Intercessor | Senior: assign, priority, status. Intercessor: status, notes, testimony |
+| DELETE | `/api/prayer-requests/:id` | Senior | Delete a request |
+| GET | `/api/intercessors` | any | Roster |
+| POST | `/api/intercessors` | Senior | Register an intercessor |
+| PATCH | `/api/intercessors/:id` | Senior | Mark Active / Inactive |
+| GET / POST | `/api/schedule` | any | Prayer sessions |
+| GET / POST | `/api/activity-records` | any | Session logs |
 
 ## Troubleshooting
 

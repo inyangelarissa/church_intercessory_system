@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { api, isOfflineMode } from "../lib/api";
+import { api, errorMessage, isSenior, type AuthUser } from "../lib/api";
 
 interface Intercessor {
   id: number; name: string; role: string; phone: string; email: string;
@@ -11,10 +11,11 @@ interface Intercessor {
 const days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const roleColors = ["#8b0000", "#0a1628", "#163058", "#5a0000", "#102447", "#64748b"];
 
-export default function Intercessors() {
+export default function Intercessors({ user }: { user: AuthUser | null }) {
+  const senior = isSenior(user);
   const [data, setData] = useState<Intercessor[]>([]);
   const [loading, setLoading] = useState(true);
-  const [offline, setOffline] = useState(false);
+  const [error, setError] = useState("");
   const [selected, setSelected] = useState<Intercessor | null>(null);
   const [statusFilter, setStatusFilter] = useState<string>("All");
   const [showAdd, setShowAdd] = useState(false);
@@ -24,7 +25,7 @@ export default function Intercessors() {
   useEffect(() => {
     api.intercessors.list()
       .then((rows) => setData(rows as Intercessor[]))
-      .catch(() => setOffline(isOfflineMode()))
+      .catch((e) => setError(errorMessage(e)))
       .finally(() => setLoading(false));
   }, []);
 
@@ -33,8 +34,9 @@ export default function Intercessors() {
   const inputStyle: React.CSSProperties = { background: "#f8faff", border: "1px solid rgba(10,22,40,0.12)", color: "#0a1628", borderRadius: 10, padding: "10px 14px", fontSize: 14, width: "100%", outline: "none" };
 
   async function submitIntercessor() {
-    if (!newPerson.name.trim()) return;
+    if (!senior || !newPerson.name.trim()) return;
     setSubmitting(true);
+    setError("");
     try {
       const created = await api.intercessors.create({
         ...newPerson,
@@ -42,23 +44,25 @@ export default function Intercessors() {
         availability: newPerson.availability,
       });
       setData((prev) => [created as Intercessor, ...prev]);
-    } catch {
-      setOffline(true);
-    } finally {
-      setSubmitting(false);
       setNewPerson({ name: "", phone: "", email: "", role: "Intercessor", availability: [] });
       setShowAdd(false);
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setSubmitting(false);
     }
   }
 
   async function toggleStatus(person: Intercessor) {
+    if (!senior) return;
+    setError("");
     const status = person.status === "Active" ? "Inactive" : "Active";
     try {
       const updated = await api.intercessors.updateStatus(person.id, status) as Intercessor;
       setData((prev) => prev.map(item => item.id === updated.id ? updated : item));
       setSelected((current) => current?.id === updated.id ? updated : current);
-    } catch {
-      setOffline(true);
+    } catch (e) {
+      setError(errorMessage(e));
     }
   }
 
@@ -68,23 +72,26 @@ export default function Intercessors() {
         <div>
           <div className="flex items-center gap-2 mb-1">
             <p className="text-xs uppercase tracking-widest font-semibold" style={{ color: "#8b0000", fontFamily: "'JetBrains Mono', monospace" }}>Module 02</p>
-            {offline && <span className="text-xs px-2 py-0.5 rounded-full font-medium" style={{ background: "rgba(180,83,9,0.1)", color: "#b45309" }}>Demo data — API not connected</span>}
           </div>
           <h1 className="text-2xl sm:text-3xl font-bold" style={{ fontFamily: "'Cinzel', serif", color: "#0a1628" }}>Intercessors</h1>
           <p className="text-sm mt-1" style={{ color: "#94a3b8" }}>
             {loading ? "Loading…" : `${data.filter(i => i.status === "Active").length} active · ${data.length} total registered`}
           </p>
         </div>
-        <button
+        {senior && <button
           onClick={() => setShowAdd(!showAdd)}
           className="px-5 py-3 rounded-xl text-sm font-semibold transition-all hover:scale-105 hover:shadow-lg w-full sm:w-auto"
           style={{ background: "#8b0000", color: "#fff", boxShadow: "0 4px 18px rgba(139,0,0,0.3)" }}
         >
           + Register Intercessor
-        </button>
+        </button>}
       </div>
 
-      {showAdd && (
+      {error && (
+        <p className="rounded-lg px-3 py-2 text-sm" style={{ background: "rgba(139,0,0,0.08)", color: "#8b0000" }}>{error}</p>
+      )}
+
+      {senior && showAdd && (
         <div className="animate-scale-in rounded-2xl border bg-white p-6 space-y-4" style={{ borderColor: "rgba(139,0,0,0.2)", boxShadow: "0 8px 32px rgba(10,22,40,0.08)" }}>
           <div className="flex items-center gap-2 mb-2">
             <div className="w-1 h-5 rounded-full" style={{ background: "#8b0000" }} />
@@ -97,7 +104,7 @@ export default function Intercessors() {
             <div>
               <label className="block text-xs font-medium mb-1.5" style={{ color: "#64748b" }}>Role</label>
               <select value={newPerson.role} onChange={e => setNewPerson({ ...newPerson, role: e.target.value })} style={inputStyle}>
-                {["Intercessor", "Senior Intercessor", "Prayer Leader", "Junior Intercessor", "Deacon / Intercessor"].map(r => <option key={r}>{r}</option>)}
+                {["Intercessor", "Prayer Leader", "Junior Intercessor", "Deacon / Intercessor"].map(r => <option key={r}>{r}</option>)}
               </select>
             </div>
           </div>
@@ -219,6 +226,14 @@ export default function Intercessors() {
         ))}
       </div>
 
+      {!loading && filtered.length === 0 && (
+        <p className="text-sm" style={{ color: "#64748b" }}>
+          {data.length === 0
+            ? "No intercessors yet. People who sign up appear here automatically."
+            : "No intercessors match this filter."}
+        </p>
+      )}
+
       {/* Detail */}
       {selected && (
         <div className="animate-scale-in rounded-2xl border p-4 sm:p-6" style={{ background: "#fff", borderColor: "rgba(139,0,0,0.25)", boxShadow: "0 8px 32px rgba(10,22,40,0.08)" }}>
@@ -232,6 +247,7 @@ export default function Intercessors() {
               </div>
             </div>
             <div className="flex items-center gap-2 self-start">
+              {senior && (
               <button
                 onClick={() => toggleStatus(selected)}
                 className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors"
@@ -243,6 +259,7 @@ export default function Intercessors() {
               >
                 {selected.status === "Active" ? "Mark inactive" : "Mark active"}
               </button>
+              )}
               <button onClick={() => setSelected(null)} className="px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-slate-100 transition-colors shrink-0" style={{ color: "#64748b", border: "1px solid rgba(10,22,40,0.1)" }}>✕ Close</button>
             </div>
           </div>

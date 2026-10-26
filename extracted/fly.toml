@@ -8,6 +8,16 @@ primary_region = 'iad'
 
 [build]
 
+[env]
+  PORT = '8080'
+  # SQLite lives on the persistent volume below. Without this, every restart/deploy
+  # wipes the database and all accounts with it.
+  DATABASE_PATH = '/data/erc_masoro.sqlite3'
+
+[mounts]
+  source = 'erc_data'
+  destination = '/data'
+
 [http_service]
   internal_port = 8080
   force_https = true

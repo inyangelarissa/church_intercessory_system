@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { api, isOfflineMode } from "../lib/api";
+import { api, errorMessage, isSenior, type AuthUser } from "../lib/api";
 
 type Priority = "Urgent" | "High" | "Normal";
 type Status = "Open" | "Assigned" | "In Prayer" | "Completed";
@@ -29,13 +29,14 @@ const statusConfig: Record<Status, { bg: string; text: string }> = {
   Completed:   { bg: "rgba(21,128,61,0.09)",  text: "#15803d" },
 };
 
-const categories = ["All", "Healing", "Guidance", "Family", "Finances", "Mental Health", "Pregnancy", "Salvation"];
+const categories = ["All", "Healing", "Guidance", "Family", "Finances", "Mental Health", "Pregnancy", "Salvation", "Other"];
 const statuses: Status[] = ["Open", "Assigned", "In Prayer", "Completed"];
 
-export default function PrayerRequests() {
+export default function PrayerRequests({ user }: { user: AuthUser | null }) {
+  const senior = isSenior(user);
   const [requests, setRequests] = useState<Request[]>([]);
   const [loading, setLoading] = useState(true);
-  const [offline, setOffline] = useState(false);
+  const [error, setError] = useState("");
   const [intercessors, setIntercessors] = useState<IntercessorOption[]>([]);
   const [catFilter, setCatFilter] = useState("All");
   const [statusFilter, setStatusFilter] = useState<string>("All");
@@ -51,15 +52,17 @@ export default function PrayerRequests() {
   useEffect(() => {
     api.prayerRequests.list()
       .then((rows) => setRequests(rows as Request[]))
-      .catch(() => setOffline(isOfflineMode()))
+      .catch((e) => setError(errorMessage(e)))
       .finally(() => setLoading(false));
   }, []);
 
+  // Only the Senior Intercessor assigns requests, so only they need the roster.
   useEffect(() => {
+    if (!senior) return;
     api.intercessors.list()
       .then((rows) => setIntercessors(rows as IntercessorOption[]))
-      .catch(() => setOffline(isOfflineMode()));
-  }, []);
+      .catch((e) => setError(errorMessage(e)));
+  }, [senior]);
 
   const filtered = requests.filter(r =>
     (catFilter === "All" || r.category === catFilter) &&
@@ -67,22 +70,24 @@ export default function PrayerRequests() {
   );
 
   async function submitRequest() {
-    if (!newReq.name || !newReq.request) return;
+    if (!newReq.name.trim() || !newReq.request.trim()) return;
     setSubmitting(true);
+    setError("");
     try {
       const created = await api.prayerRequests.create(newReq);
       setRequests((prev) => [created as Request, ...prev]);
-    } catch {
-      setOffline(true);
-    } finally {
-      setSubmitting(false);
       setNewReq({ name: "", contact: "", request: "", category: "Healing", priority: "Normal" });
       setShowForm(false);
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setSubmitting(false);
     }
   }
 
   async function assignRequest(intercessorId: string) {
-    if (!selected) return;
+    if (!selected || !senior) return;
+    setError("");
     const assignedIntercessorId = intercessorId ? Number(intercessorId) : null;
     try {
       const updated = await api.prayerRequests.update(selected.id, {
@@ -91,8 +96,8 @@ export default function PrayerRequests() {
       }) as Request;
       setRequests((prev) => prev.map(item => item.id === updated.id ? updated : item));
       setSelected(updated);
-    } catch {
-      setOffline(true);
+    } catch (e) {
+      setError(errorMessage(e));
     }
   }
 
@@ -106,6 +111,7 @@ export default function PrayerRequests() {
   async function saveProgress() {
     if (!selected || (progressStatus === "Completed" && !testimony.trim())) return;
     setSavingProgress(true);
+    setError("");
     try {
       const updated = await api.prayerRequests.update(selected.id, {
         status: progressStatus,
@@ -114,8 +120,8 @@ export default function PrayerRequests() {
       }) as Request;
       setRequests((prev) => prev.map(item => item.id === updated.id ? updated : item));
       setSelected(updated);
-    } catch {
-      setOffline(true);
+    } catch (e) {
+      setError(errorMessage(e));
     } finally {
       setSavingProgress(false);
     }
@@ -130,22 +136,25 @@ export default function PrayerRequests() {
         <div>
           <div className="flex items-center gap-2 mb-1">
             <p className="text-xs uppercase tracking-widest font-semibold" style={{ color: "#8b0000", fontFamily: "'JetBrains Mono', monospace" }}>Module 01</p>
-            {offline && <span className="text-xs px-2 py-0.5 rounded-full font-medium" style={{ background: "rgba(180,83,9,0.1)", color: "#b45309" }}>Demo data — API not connected</span>}
           </div>
-          <h1 className="text-2xl sm:text-3xl font-bold" style={{ fontFamily: "'Cinzel', serif", color: "#0a1628" }}>Prayer Requests</h1>
-          <p className="text-sm mt-1" style={{ color: "#94a3b8" }}>{loading ? "Loading…" : `${requests.length} total requests recorded`}</p>
+          <h1 className="text-2xl sm:text-3xl font-bold" style={{ fontFamily: "'Cinzel', serif", color: "#0a1628" }}>{senior ? "Prayer Requests" : "My Assigned Prayer Requests"}</h1>
+          <p className="text-sm mt-1" style={{ color: "#94a3b8" }}>{loading ? "Loading…" : senior ? `${requests.length} total requests recorded` : `${requests.length} request${requests.length === 1 ? "" : "s"} assigned to you`}</p>
         </div>
-        <button
+        {senior && <button
           onClick={() => setShowForm(!showForm)}
           className="px-5 py-3 rounded-xl text-sm font-semibold transition-all hover:scale-105 hover:shadow-lg w-full sm:w-auto"
           style={{ background: "#8b0000", color: "#fff", boxShadow: "0 4px 18px rgba(139,0,0,0.3)" }}
         >
           + New Request
-        </button>
+        </button>}
       </div>
 
+      {error && (
+        <p className="rounded-lg px-3 py-2 text-sm" style={{ background: "rgba(139,0,0,0.08)", color: "#8b0000" }}>{error}</p>
+      )}
+
       {/* New Request Form */}
-      {showForm && (
+      {senior && showForm && (
         <div className="animate-scale-in rounded-2xl border bg-white p-6 space-y-4" style={{ borderColor: "rgba(139,0,0,0.2)", boxShadow: "0 8px 32px rgba(10,22,40,0.08)" }}>
           <div className="flex items-center gap-2 mb-2">
             <div className="w-1 h-5 rounded-full" style={{ background: "#8b0000" }} />
@@ -250,6 +259,13 @@ export default function PrayerRequests() {
             ))}
           </tbody>
         </table>
+        {!loading && filtered.length === 0 && (
+          <p className="px-6 py-10 text-sm" style={{ color: "#64748b" }}>
+            {requests.length === 0
+              ? (senior ? "No prayer requests yet. Requests submitted from the home page will appear here." : "Nothing has been assigned to you yet. The Senior Intercessor will assign prayer requests to you.")
+              : "No requests match the selected filters."}
+          </p>
+        )}
         </div>
       </div>
 
@@ -271,7 +287,7 @@ export default function PrayerRequests() {
             <div>
               <label className="block text-xs font-medium mb-1.5" style={{ color: "#64748b" }}>Progress status</label>
               <select value={progressStatus} onChange={e => setProgressStatus(e.target.value as Status)} style={inputStyle}>
-                {statuses.map(status => <option key={status}>{status}</option>)}
+                {statuses.filter(status => senior || status !== "Open").map(status => <option key={status}>{status}</option>)}
               </select>
             </div>
             <div>
@@ -279,21 +295,25 @@ export default function PrayerRequests() {
               <textarea value={progressNotes} onChange={e => setProgressNotes(e.target.value)} rows={2} style={{ ...inputStyle, resize: "vertical" }} placeholder="Record follow-up or progress..." />
             </div>
           </div>
-          <div className="max-w-sm mb-4">
-            <label className="block text-xs font-medium mb-1.5" style={{ color: "#64748b" }}>Assign to intercessor</label>
-            <select
-              value={selected.assignedIntercessorId ?? ""}
-              onChange={e => assignRequest(e.target.value)}
-              style={inputStyle}
-            >
-              <option value="">Unassigned</option>
-              {intercessors.filter(intercessor => intercessor.status === "Active").map(intercessor => (
-                <option key={intercessor.id} value={intercessor.id}>
-                  {intercessor.name}
-                </option>
-              ))}
-            </select>
-          </div>
+          {senior ? (
+            <div className="max-w-sm mb-4">
+              <label className="block text-xs font-medium mb-1.5" style={{ color: "#64748b" }}>Assign to intercessor</label>
+              <select
+                value={selected.assignedIntercessorId ?? ""}
+                onChange={e => assignRequest(e.target.value)}
+                style={inputStyle}
+              >
+                <option value="">Unassigned</option>
+                {intercessors.filter(intercessor => intercessor.status === "Active" || intercessor.id === selected.assignedIntercessorId).map(intercessor => (
+                  <option key={intercessor.id} value={intercessor.id}>
+                    {intercessor.name}{intercessor.status === "Inactive" ? " (inactive)" : ""}
+                  </option>
+                ))}
+              </select>
+            </div>
+          ) : (
+            <p className="text-sm mb-4" style={{ color: "#64748b" }}>Assigned to you by the Senior Intercessor.</p>
+          )}
           {progressStatus === "Completed" && (
             <div className="mb-4">
               <label className="block text-xs font-medium mb-1.5" style={{ color: "#64748b" }}>Testimony *</label>

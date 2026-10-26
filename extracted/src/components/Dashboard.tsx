@@ -1,9 +1,20 @@
 import { useState, useEffect } from "react";
-import { api } from "../lib/api";
+import { api, errorMessage, isSenior, type AuthUser } from "../lib/api";
 
-const defaultStatValues = { totalIntercessors: 0, openRequests: 0, requestsCovered: 0, sessionsThisWeek: 0, totalTestimonies: 0 };
+const defaultStatValues = { awaitingAssignment: 0, totalIntercessors: 0, openRequests: 0, requestsCovered: 0, sessionsThisWeek: 0, totalTestimonies: 0 };
 
 const statMeta = [
+  {
+    key: "awaitingAssignment" as const,
+    label: "Awaiting Assignment",
+    icon: (
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" />
+      </svg>
+    ),
+    color: "#b45309",
+    bg: "rgba(180,83,9,0.09)",
+  },
   {
     key: "totalIntercessors" as const,
     label: "Active Intercessors",
@@ -69,12 +80,25 @@ const priorityConfig: Record<string, { bg: string; text: string; dot: string }> 
   Normal: { bg: "rgba(10,22,40,0.06)", text: "#334155", dot: "#64748b" },
 };
 
-export default function Dashboard() {
+// Labels for an Intercessor, whose numbers cover only the requests assigned to them.
+const intercessorLabels: Record<string, string> = {
+  openRequests: "My Open Requests",
+  requestsCovered: "My Completed Prayers",
+  totalTestimonies: "My Testimonies",
+};
+
+export default function Dashboard({ user }: { user: AuthUser | null }) {
+  const senior = isSenior(user);
   const [hoveredBar, setHoveredBar] = useState<number | null>(null);
   const [statValues, setStatValues] = useState(defaultStatValues);
   const [statsError, setStatsError] = useState("");
   const [recentRequests, setRecentRequests] = useState<any[]>([]);
   const [upcomingSessions, setUpcomingSessions] = useState<any[]>([]);
+  const [unassigned, setUnassigned] = useState<any[]>([]);
+  const [roster, setRoster] = useState<any[]>([]);
+  const [assigningId, setAssigningId] = useState<number | null>(null);
+  const [assignError, setAssignError] = useState("");
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -84,6 +108,7 @@ export default function Dashboard() {
         if (cancelled) return;
         setStatsError("");
         setStatValues({
+          awaitingAssignment: Number(s?.awaitingAssignment ?? 0),
           totalIntercessors: Number(s?.totalIntercessors ?? 0),
           openRequests: Number(s?.openRequests ?? 0),
           requestsCovered: Number(s?.requestsCovered ?? 0),
@@ -91,16 +116,16 @@ export default function Dashboard() {
           totalTestimonies: Number(s?.totalTestimonies ?? 0),
         });
       })
-      .catch(() => {
-        if (!cancelled) {
-          setStatsError("Dashboard data could not be loaded. Please refresh or sign in again.");
-        }
+      .catch((e) => {
+        if (!cancelled) setStatsError(errorMessage(e));
       });
 
     api.prayerRequests.list()
       .then((rows) => {
         if (cancelled) return;
-        setRecentRequests((rows ?? []).slice(0, 5).map((r: any) => ({
+        const all = rows ?? [];
+        setUnassigned(all.filter((r: any) => !r.assignedIntercessorId && r.status === "Open"));
+        setRecentRequests(all.slice(0, 5).map((r: any) => ({
           name: r.name ?? "Unknown",
           request: r.request ?? "No request details provided",
           priority: r.priority ?? "Normal",
@@ -109,9 +134,18 @@ export default function Dashboard() {
           initials: r.initials ?? (r.name ?? "?").split(" ").slice(0, 2).map((part: string) => part[0]).join("").toUpperCase(),
         })));
       })
-      .catch(() => {
-        if (!cancelled) setRecentRequests([]);
+      .catch((e) => {
+        if (!cancelled) {
+          setRecentRequests([]);
+          setStatsError(errorMessage(e));
+        }
       });
+
+    if (senior) {
+      api.intercessors.list()
+        .then((rows) => { if (!cancelled) setRoster((rows ?? []).filter((i: any) => i.status === "Active")); })
+        .catch(() => { /* the assign dropdown simply stays empty */ });
+    }
 
     api.schedule.list()
       .then((rows) => {
@@ -130,9 +164,29 @@ export default function Dashboard() {
       });
 
     return () => { cancelled = true; };
-  }, []);
+  }, [senior, reloadKey]);
 
-  const stats = statMeta.map((m) => ({ ...m, value: statValues[m.key].toLocaleString() }));
+  async function assign(requestId: number, intercessorId: string) {
+    if (!intercessorId) return;
+    setAssigningId(requestId);
+    setAssignError("");
+    try {
+      await api.prayerRequests.update(requestId, { assignedIntercessorId: Number(intercessorId), status: "Assigned" });
+      setReloadKey((k) => k + 1);
+    } catch (e) {
+      setAssignError(errorMessage(e));
+    } finally {
+      setAssigningId(null);
+    }
+  }
+
+  const stats = statMeta
+    .filter((m) => senior || m.key !== "awaitingAssignment")
+    .map((m) => ({
+      ...m,
+      label: senior ? m.label : (intercessorLabels[m.key] ?? m.label),
+      value: statValues[m.key].toLocaleString(),
+    }));
   const hasRequestData = recentRequests.length > 0;
   const hasSessionData = upcomingSessions.length > 0;
 
@@ -142,17 +196,17 @@ export default function Dashboard() {
       <div className="animate-fade-up">
         <div className="flex items-center gap-2 mb-1">
           <p className="text-xs uppercase tracking-widest font-semibold" style={{ color: "#8b0000", fontFamily: "'JetBrains Mono', monospace" }}>
-            Overview · Live from database
+            {senior ? "Senior Intercessor · Live from database" : "Intercessor · Live from database"}
           </p>
         </div>
         <h1
           className="text-2xl sm:text-3xl font-bold"
           style={{ fontFamily: "'Cinzel', serif", color: "#0a1628" }}
         >
-          Intercession Dashboard
+          {senior ? "Intercession Dashboard" : "My Dashboard"}
         </h1>
         <p className="mt-1 text-sm" style={{ color: "#94a3b8" }}>
-          A unified view of all intercessory activities across the congregation.
+          {senior ? "A unified view of all intercessory activities across the congregation." : "Your assigned prayer requests and the upcoming prayer sessions."}
         </p>
         {statsError && (
           <p className="mt-3 rounded-lg px-3 py-2 text-sm" style={{ background: "rgba(139,0,0,0.08)", color: "#8b0000" }}>
@@ -162,7 +216,7 @@ export default function Dashboard() {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-2 gap-4 sm:gap-5 lg:grid-cols-5">
+      <div className={`grid grid-cols-2 gap-4 sm:gap-5 ${senior ? "lg:grid-cols-6" : "lg:grid-cols-5"}`}>
         {stats.map((s, i) => (
           <div
             key={i}
@@ -184,6 +238,67 @@ export default function Dashboard() {
         ))}
       </div>
 
+      {/* New requests waiting for the Senior Intercessor to assign */}
+      {senior && (
+        <div
+          className="animate-fade-up rounded-2xl border bg-white overflow-hidden"
+          style={{ borderColor: "rgba(180,83,9,0.25)", boxShadow: "0 2px 12px rgba(10,22,40,0.05)" }}
+        >
+          <div className="flex items-center justify-between px-6 py-5 border-b" style={{ borderColor: "rgba(10,22,40,0.06)" }}>
+            <h2 className="text-base font-bold" style={{ fontFamily: "'Cinzel', serif", color: "#0a1628" }}>
+              New Requests Awaiting Assignment
+            </h2>
+            <span className="text-xs px-2.5 py-1 rounded-full" style={{ background: "rgba(180,83,9,0.1)", color: "#b45309", fontFamily: "'JetBrains Mono', monospace" }}>
+              {unassigned.length} waiting
+            </span>
+          </div>
+          {assignError && (
+            <p className="mx-6 mt-4 rounded-lg px-3 py-2 text-sm" style={{ background: "rgba(139,0,0,0.08)", color: "#8b0000" }}>{assignError}</p>
+          )}
+          {unassigned.length === 0 ? (
+            <div className="px-6 py-8 text-sm" style={{ color: "#64748b" }}>
+              No requests are waiting. New requests submitted from the home page will appear here.
+            </div>
+          ) : (
+            unassigned.map((r) => (
+              <div key={r.id} className="px-6 py-4 flex flex-col gap-3 sm:flex-row sm:items-center border-b" style={{ borderColor: "rgba(10,22,40,0.04)" }}>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-0.5 flex-wrap">
+                    <p className="text-sm font-semibold" style={{ color: "#0a1628" }}>{r.name}</p>
+                    <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: "rgba(10,22,40,0.06)", color: "#0a1628" }}>{r.category}</span>
+                    <span
+                      className="text-xs px-2 py-0.5 rounded-full"
+                      style={{ background: (priorityConfig[r.priority] ?? priorityConfig.Normal).bg, color: (priorityConfig[r.priority] ?? priorityConfig.Normal).text }}
+                    >
+                      {r.priority}
+                    </span>
+                  </div>
+                  <p className="text-sm" style={{ color: "#64748b" }}>{r.request}</p>
+                  <p className="text-xs mt-1" style={{ color: "#94a3b8", fontFamily: "'JetBrains Mono', monospace" }}>
+                    {r.date}{r.contact ? ` · ${r.contact}` : ""}
+                  </p>
+                </div>
+                <select
+                  value=""
+                  disabled={assigningId === r.id}
+                  onChange={(e) => assign(r.id, e.target.value)}
+                  className="sm:w-56 shrink-0"
+                  style={{ background: "#f8faff", border: "1px solid rgba(10,22,40,0.12)", color: "#0a1628", borderRadius: 10, padding: "10px 14px", fontSize: 14, outline: "none" }}
+                >
+                  <option value="">{assigningId === r.id ? "Assigning…" : "Assign to…"}</option>
+                  {roster.map((i) => <option key={i.id} value={i.id}>{i.name}</option>)}
+                </select>
+              </div>
+            ))
+          )}
+          {unassigned.length > 0 && roster.length === 0 && (
+            <p className="px-6 py-4 text-sm" style={{ color: "#b45309" }}>
+              There are no active intercessors to assign to yet. Intercessors appear here once they sign up (or you register them on the Intercessors page).
+            </p>
+          )}
+        </div>
+      )}
+
       {/* Main grid */}
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
         {/* Recent Requests */}
@@ -193,10 +308,10 @@ export default function Dashboard() {
         >
           <div className="flex items-center justify-between px-6 py-5 border-b" style={{ borderColor: "rgba(10,22,40,0.06)" }}>
             <h2 className="text-base font-bold" style={{ fontFamily: "'Cinzel', serif", color: "#0a1628" }}>
-              Recent Prayer Requests
+              {senior ? "Recent Prayer Requests" : "My Assigned Requests"}
             </h2>
             <span className="text-xs px-2.5 py-1 rounded-full" style={{ background: "rgba(139,0,0,0.09)", color: "#8b0000", fontFamily: "'JetBrains Mono', monospace" }}>
-              Last 7 days
+              Latest 5
             </span>
           </div>
           <div>
@@ -236,7 +351,7 @@ export default function Dashboard() {
               ))
             ) : (
               <div className="px-6 py-10 text-sm" style={{ color: "#64748b" }}>
-                No recent prayer requests have been added yet.
+                {senior ? "No prayer requests have been submitted yet." : "Nothing has been assigned to you yet."}
               </div>
             )}
           </div>

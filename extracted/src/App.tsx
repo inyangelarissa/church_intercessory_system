@@ -5,13 +5,14 @@ import Dashboard from "./components/Dashboard";
 import PrayerRequests from "./components/PrayerRequests";
 import Intercessors from "./components/Intercessors";
 import Schedule from "./components/Schedule";
+import ActivityRecords from "./components/ActivityRecords";
 import Sidebar from "./components/Sidebar";
 import ercLogo from "./assets/erc-logo.png";
-import { getStoredUser, clearSession, type AuthUser } from "./lib/api";
+import { api, getStoredUser, setSession, getToken, clearSession, type AuthUser } from "./lib/api";
 
-export type View = "home" | "auth" | "dashboard" | "requests" | "intercessors" | "schedule";
+export type View = "home" | "auth" | "dashboard" | "requests" | "intercessors" | "schedule" | "records";
 
-const PROTECTED_VIEWS: View[] = ["dashboard", "requests", "intercessors", "schedule"];
+const PROTECTED_VIEWS: View[] = ["dashboard", "requests", "intercessors", "schedule", "records"];
 
 export default function App() {
   const [activeView, setActiveView] = useState<View>("home");
@@ -29,6 +30,28 @@ export default function App() {
     check();
     window.addEventListener("resize", check);
     return () => window.removeEventListener("resize", check);
+  }, []);
+
+  // Confirm the stored session with the server (also picks up role changes).
+  useEffect(() => {
+    if (!getToken()) return;
+    api.auth.me()
+      .then(({ user: fresh }) => {
+        setSession(getToken() as string, fresh);
+        setUser(fresh);
+      })
+      .catch(() => { /* a 401 is handled by the "erc:unauthorized" listener below */ });
+  }, []);
+
+  // The API client fires this when the server rejects our token (expired, or the account is gone).
+  useEffect(() => {
+    const onUnauthorized = () => {
+      clearSession();
+      setUser(null);
+      setActiveView("auth");
+    };
+    window.addEventListener("erc:unauthorized", onUnauthorized);
+    return () => window.removeEventListener("erc:unauthorized", onUnauthorized);
   }, []);
 
   // Close sidebar on mobile when navigating
@@ -58,10 +81,11 @@ export default function App() {
   const views: Record<View, React.ReactNode> = {
     home: <Home onEnter={() => navigate("auth")} />,
     auth: <Auth onAuthenticated={handleAuthenticated} onBack={() => navigate("home")} />,
-    dashboard: <Dashboard />,
-    requests: <PrayerRequests />,
-    intercessors: <Intercessors />,
+    dashboard: <Dashboard user={user} />,
+    requests: <PrayerRequests user={user} />,
+    intercessors: <Intercessors user={user} />,
     schedule: <Schedule />,
+    records: <ActivityRecords />,
   };
 
   if (isAuth) {

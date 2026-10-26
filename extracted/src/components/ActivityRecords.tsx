@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { api, isOfflineMode } from "../lib/api";
+import { api, errorMessage } from "../lib/api";
 
 interface ActivityRecord {
   id: number; session: string; date: string; lead: string;
@@ -8,17 +8,6 @@ interface ActivityRecord {
   dayNum: string; month: string;
 }
 
-const fallbackRecords: ActivityRecord[] = [
-  { id: 1, session: "All-Night Vigil", date: "Aug 31, 2026", dayNum: "31", month: "Aug", lead: "Sr. Mary Wanjiku", attendees: 22, requestsCovered: 45, duration: "8 hrs", outcome: "Fruitful", notes: "Strong presence felt. Many testimonies of breakthrough during the watch.", testimonies: 7 },
-  { id: 2, session: "Saturday Prayer Warriors", date: "Sep 6, 2026", dayNum: "06", month: "Sep", lead: "Pastor John Kariuki", attendees: 18, requestsCovered: 28, duration: "3 hrs", outcome: "Fruitful", notes: "Focused on healing requests. Three immediate testimonies.", testimonies: 3 },
-  { id: 3, session: "Early Morning Intercession", date: "Sep 8, 2026", dayNum: "08", month: "Sep", lead: "Sr. Mary Wanjiku", attendees: 7, requestsCovered: 12, duration: "2 hrs", outcome: "Regular", notes: "Steady intercession. Covered national matters and congregational requests.", testimonies: 0 },
-  { id: 4, session: "Midday Intercession", date: "Sep 10, 2026", dayNum: "10", month: "Sep", lead: "Br. James Mwangi", attendees: 4, requestsCovered: 8, duration: "1 hr", outcome: "Regular", notes: "Good session despite low attendance due to public holiday.", testimonies: 0 },
-  { id: 5, session: "Healing Prayer Watch", date: "Sep 9, 2026", dayNum: "09", month: "Sep", lead: "Pastor John Kariuki", attendees: 11, requestsCovered: 20, duration: "1.5 hrs", outcome: "Fruitful", notes: "Received word of healing for Sr. Hannah's back pain. Family of Joseph Otieno reported improvement.", testimonies: 2 },
-  { id: 6, session: "Family Prayer Circle", date: "Sep 11, 2026", dayNum: "11", month: "Sep", lead: "Deacon Paul Njeru", attendees: 9, requestsCovered: 15, duration: "1.5 hrs", outcome: "Regular", notes: "Covered 15 family-related requests. Session was peaceful and orderly.", testimonies: 1 },
-  { id: 7, session: "Early Morning Intercession", date: "Sep 15, 2026", dayNum: "15", month: "Sep", lead: "Sr. Mary Wanjiku", attendees: 5, requestsCovered: 10, duration: "1 hr", outcome: "Incomplete", notes: "Session cut short due to power outage. Resumed briefly outdoors.", testimonies: 0 },
-  { id: 8, session: "Saturday Prayer Warriors", date: "Sep 13, 2026", dayNum: "13", month: "Sep", lead: "Pastor John Kariuki", attendees: 20, requestsCovered: 35, duration: "3 hrs", outcome: "Fruitful", notes: "Best session this month. Covered urgent requests. Several intercessors reported confirmations.", testimonies: 5 },
-];
-
 const outcomeConfig: Record<string, { bg: string; text: string; dot: string; bar: string }> = {
   Fruitful:   { bg: "rgba(21,128,61,0.09)",  text: "#15803d", dot: "#22c55e", bar: "#15803d" },
   Regular:    { bg: "rgba(10,22,40,0.06)",   text: "#334155", dot: "#64748b", bar: "#0a1628" },
@@ -26,16 +15,16 @@ const outcomeConfig: Record<string, { bg: string; text: string; dot: string; bar
 };
 
 export default function ActivityRecords() {
-  const [records, setRecords] = useState<ActivityRecord[]>(fallbackRecords);
+  const [records, setRecords] = useState<ActivityRecord[]>([]);
   const [loading, setLoading] = useState(true);
-  const [offline, setOffline] = useState(false);
+  const [error, setError] = useState("");
   const [selected, setSelected] = useState<ActivityRecord | null>(null);
   const [outcomeFilter, setOutcomeFilter] = useState<string>("All");
 
   useEffect(() => {
     api.activityRecords.list()
       .then((rows) => setRecords(rows as ActivityRecord[]))
-      .catch(() => setOffline(isOfflineMode()))
+      .catch((e) => setError(errorMessage(e)))
       .finally(() => setLoading(false));
   }, []);
 
@@ -43,6 +32,7 @@ export default function ActivityRecords() {
 
   const totalTestimonies = records.reduce((s, r) => s + r.testimonies, 0);
   const totalRequests = records.reduce((s, r) => s + r.requestsCovered, 0);
+  const totalHours = records.reduce((sum, r) => sum + (parseFloat(r.duration) || 0), 0);
   const fruitful = records.filter(r => r.outcome === "Fruitful").length;
 
   return (
@@ -50,16 +40,16 @@ export default function ActivityRecords() {
       <div className="animate-fade-up">
         <div className="flex items-center gap-2 mb-1">
           <p className="text-xs uppercase tracking-widest font-semibold" style={{ color: "#8b0000", fontFamily: "'JetBrains Mono', monospace" }}>Module 04</p>
-          {offline && <span className="text-xs px-2 py-0.5 rounded-full font-medium" style={{ background: "rgba(180,83,9,0.1)", color: "#b45309" }}>Demo data — API not connected</span>}
         </div>
         <h1 className="text-2xl sm:text-3xl font-bold" style={{ fontFamily: "'Cinzel', serif", color: "#0a1628" }}>Activity Records</h1>
         <p className="text-sm mt-1" style={{ color: "#94a3b8" }}>{loading ? "Loading…" : "Complete log of all intercession sessions and their outcomes"}</p>
+        {error && <p className="mt-3 rounded-lg px-3 py-2 text-sm" style={{ background: "rgba(139,0,0,0.08)", color: "#8b0000" }}>{error}</p>}
       </div>
 
       {/* Summary stats */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 sm:gap-5">
         {[
-          { label: "Total Prayer Hours", value: "22 hrs", sub: `${records.length} sessions logged`, icon: "⏱" },
+          { label: "Total Prayer Hours", value: `${Number.isInteger(totalHours) ? totalHours : totalHours.toFixed(1)} hrs`, sub: `${records.length} sessions logged`, icon: "⏱" },
           { label: "Requests Covered", value: totalRequests.toString(), sub: "Across all sessions", icon: "🙏" },
           { label: "Recorded Testimonies", value: totalTestimonies.toString(), sub: `${fruitful} fruitful sessions`, icon: "✨" },
         ].map((s, i) => (
@@ -94,6 +84,10 @@ export default function ActivityRecords() {
           </button>
         ))}
       </div>
+
+      {!loading && records.length === 0 && !error && (
+        <p className="text-sm" style={{ color: "#64748b" }}>No activity has been recorded yet.</p>
+      )}
 
       {/* Records */}
       <div className="space-y-3">

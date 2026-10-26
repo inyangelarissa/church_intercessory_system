@@ -43,6 +43,16 @@ const navItems: { id: View; label: string; icon: React.ReactNode }[] = [
       </svg>
     ),
   },
+  {
+    id: "records",
+    label: "Activity Records",
+    icon: (
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" />
+        <line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" />
+      </svg>
+    ),
+  },
 ];
 
 interface SidebarProps {
@@ -59,7 +69,7 @@ export default function Sidebar({ activeView, setActiveView, open, isMobile, use
   const sidebarWidth = open ? 260 : 72;
   const collapsed = !open;
   const displayName = user?.name || "Guest User";
-  const displayRole = (user?.role || "administrator").toLowerCase();
+  const displayRole = (user?.role || "").toLowerCase();
   const initials = displayName.split(/\s+/).map(w => w[0]).slice(0, 2).join("").toUpperCase();
 
   return (

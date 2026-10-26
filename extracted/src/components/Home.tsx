@@ -1,6 +1,7 @@
 import { useState } from "react";
 import ercHeroBg from "../assets/erc-hero-bg.png";
 import ercLogo from "../assets/erc-logo.png";
+import { api, errorMessage } from "../lib/api";
 
 interface HomeProps { onEnter: () => void; }
 
@@ -13,12 +14,6 @@ const features = [
   { icon: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><path d="M12 6v6l4 2" /></svg>, title: "24/7 Prayer Coverage", desc: "Ensure round-the-clock intercession with structured shifts, automatic reminders, and team accountability." },
 ];
 
-const testimonies = [
-  { name: "Sr. Mary Wanjiku", role: "Senior Intercessor", text: "This system transformed how we coordinate our prayer team. We no longer miss urgent requests or double-assign intercessors.", initials: "MW" },
-  { name: "Pastor John Kariuki", role: "Prayer Leader", text: "The scheduling module alone saved us hours every week. The whole congregation feels the difference in our prayer coverage.", initials: "JK" },
-  { name: "Br. James Mwangi", role: "Intercessor", text: "I can see exactly which requests are assigned to me and update my prayer reports from anywhere. It keeps me accountable.", initials: "JM" },
-];
-
 const categories = ["Healing", "Guidance", "Family", "Finances", "Mental Health", "Pregnancy", "Salvation", "Other"];
 
 type FormState = "idle" | "submitting" | "success";
@@ -27,6 +22,7 @@ export default function Home({ onEnter }: HomeProps) {
   const [form, setForm] = useState({ name: "", contact: "", email: "", category: "Healing", request: "", anonymous: false });
   const [formState, setFormState] = useState<FormState>("idle");
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [submitError, setSubmitError] = useState("");
 
   function validate() {
     const e: Record<string, string> = {};
@@ -39,15 +35,29 @@ export default function Home({ onEnter }: HomeProps) {
     ev.preventDefault();
     const e = validate();
     setErrors(e);
+    setSubmitError("");
     if (Object.keys(e).length > 0) return;
     setFormState("submitting");
-    setTimeout(() => setFormState("success"), 1400);
+    api.prayerRequests.submitPublic({
+      name: form.name.trim(),
+      contact: form.contact.trim(),
+      email: form.email.trim(),
+      category: form.category,
+      request: form.request.trim(),
+      anonymous: form.anonymous,
+    })
+      .then(() => setFormState("success"))
+      .catch((err) => {
+        setSubmitError(errorMessage(err));
+        setFormState("idle");
+      });
   }
 
   function resetForm() {
     setForm({ name: "", contact: "", email: "", category: "Healing", request: "", anonymous: false });
     setFormState("idle");
     setErrors({});
+    setSubmitError("");
   }
 
   const inputCls: React.CSSProperties = {
@@ -334,6 +344,12 @@ export default function Home({ onEnter }: HomeProps) {
                   </p>
                 </div>
 
+                {submitError && (
+                  <p className="rounded-lg px-3 py-2 text-sm" style={{ background: "rgba(139,0,0,0.08)", color: "#8b0000" }}>
+                    {submitError}
+                  </p>
+                )}
+
                 {/* Submit */}
                 <button
                   type="submit"
@@ -363,41 +379,6 @@ export default function Home({ onEnter }: HomeProps) {
         </div>
       </section>
 
-      {/* ── Testimonials ─────────────────────────────── */}
-      <section className="py-16 sm:py-24 px-4 sm:px-6" style={{ background: "#fff" }}>
-        <div className="max-w-5xl mx-auto">
-          <div className="text-center mb-10 sm:mb-14">
-            <span className="text-xs uppercase tracking-widest font-semibold" style={{ color: "#8b0000", fontFamily: "'JetBrains Mono', monospace" }}>Testimonies</span>
-            <h2 className="text-3xl sm:text-4xl font-bold mt-3" style={{ fontFamily: "'Cinzel', serif", color: "#0a1628" }}>From Our Intercessors</h2>
-          </div>
-          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
-            {testimonies.map((t, i) => (
-              <div key={i} className="card-hover rounded-2xl p-6 sm:p-7 border animate-fade-up"
-                style={{ background: "#f8faff", borderColor: "rgba(10,22,40,0.07)", boxShadow: "0 2px 12px rgba(10,22,40,0.05)", animationDelay: `${i * 100}ms` }}>
-                <div className="flex mb-4 gap-0.5">
-                  {[...Array(5)].map((_, j) => (
-                    <svg key={j} width="14" height="14" viewBox="0 0 24 24" fill="#8b0000">
-                      <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
-                    </svg>
-                  ))}
-                </div>
-                <p className="text-sm leading-relaxed mb-5" style={{ color: "#475569", fontStyle: "italic" }}>"{t.text}"</p>
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold"
-                    style={{ background: "#0a1628", color: "#fff", fontFamily: "'Cinzel', serif" }}>
-                    {t.initials}
-                  </div>
-                  <div>
-                    <p className="text-sm font-semibold" style={{ color: "#0a1628" }}>{t.name}</p>
-                    <p className="text-xs" style={{ color: "#94a3b8" }}>{t.role}</p>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
       {/* ── CTA ──────────────────────────────────────── */}
       <section className="py-16 sm:py-24 px-4 sm:px-6" style={{ background: "#0a1628" }}>
         <div className="max-w-3xl mx-auto text-center">
@@ -405,7 +386,7 @@ export default function Home({ onEnter }: HomeProps) {
             Ready to Strengthen Your Prayer Ministry?
           </h2>
           <p className="text-sm sm:text-base mb-10 animate-fade-up delay-100" style={{ color: "rgba(255,255,255,0.55)", lineHeight: 1.8 }}>
-            Join hundreds of churches using structured intercession management to ensure no prayer request goes uncovered.
+            Sign in to coordinate prayer requests, intercessors, and sessions so that no prayer need goes uncovered.
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
             <button onClick={onEnter}

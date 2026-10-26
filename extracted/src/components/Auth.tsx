@@ -1,7 +1,7 @@
 import { useState } from "react";
 import ercLogo from "../assets/erc-logo.png";
 import ercHeroBg from "../assets/erc-hero-bg.png";
-import { api, setSession, ApiError, OfflineError, type AuthUser } from "../lib/api";
+import { api, setSession, errorMessage, type AuthUser } from "../lib/api";
 
 interface AuthProps {
   onAuthenticated: (user: AuthUser) => void;
@@ -58,14 +58,7 @@ export default function Auth({ onAuthenticated, onBack }: AuthProps) {
         onAuthenticated(user);
       })
       .catch((err) => {
-        if (err instanceof OfflineError) {
-          // No API server reachable (e.g. this is the static published preview) — fall back to a local demo session.
-          const demoUser: AuthUser = { id: 0, name: login.email.split("@")[0] || "Demo User", email: login.email, role: "Admin" };
-          setSession("demo-mode", demoUser);
-          onAuthenticated(demoUser);
-          return;
-        }
-        setErrors({ password: err instanceof ApiError ? err.message : "Something went wrong. Please try again." });
+        setErrors({ password: errorMessage(err) });
       })
       .finally(() => setFormState("idle"));
   }
@@ -79,20 +72,14 @@ export default function Auth({ onAuthenticated, onBack }: AuthProps) {
 
     api.auth.signup({
       name: signup.name.trim(), email: signup.email.trim(), phone: signup.phone.trim(),
-      role: "Intercessor", password: signup.password,
+      password: signup.password,
     })
       .then(({ token, user }) => {
         setSession(token, user);
         onAuthenticated(user);
       })
       .catch((err) => {
-        if (err instanceof OfflineError) {
-          const demoUser: AuthUser = { id: 0, name: signup.name || "Demo User", email: signup.email, role: "Intercessor" };
-          setSession("demo-mode", demoUser);
-          onAuthenticated(demoUser);
-          return;
-        }
-        setErrors({ email: err instanceof ApiError ? err.message : "Something went wrong. Please try again." });
+        setErrors({ email: errorMessage(err) });
       })
       .finally(() => setFormState("idle"));
   }
