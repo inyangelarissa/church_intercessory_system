@@ -1,10 +1,15 @@
 import Database from "better-sqlite3";
 import path from "path";
+import os from "os";
 import { fileURLToPath } from "url";
 import bcrypt from "bcryptjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const DB_PATH = path.join(__dirname, "erc_masoro.sqlite3");
+// Vercel's deployed filesystem is read-only. /tmp is writable, but ephemeral;
+// use a persistent database service for production data durability.
+const DB_PATH = process.env.VERCEL === "1"
+  ? path.join(os.tmpdir(), "erc_masoro.sqlite3")
+  : path.join(__dirname, "erc_masoro.sqlite3");
 
 export const db = new Database(DB_PATH);
 db.pragma("journal_mode = WAL");

@@ -41,6 +41,11 @@ When deploying on Vercel, set the project root to this directory (the
 directory containing `package.json`) and deploy again. This exposes
 `/api/auth/signup` and `/api/auth/login` alongside the Vite frontend.
 
+Vercel's `/tmp` storage is used for the SQLite file in the serverless
+environment so the function can start successfully. That storage is
+ephemeral; configure a persistent database such as Vercel Postgres or
+Turso before using this as a production system.
+
 ### Demo login
 
 | Email | Password |
