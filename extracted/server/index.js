@@ -60,6 +60,10 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: "Something went wrong on the server." });
 });
 
-app.listen(PORT, () => {
-  console.log(`ERC Masoro API listening on http://localhost:${PORT}`);
-});
+if (process.env.VERCEL !== "1") {
+  app.listen(PORT, () => {
+    console.log(`ERC Masoro API listening on http://localhost:${PORT}`);
+  });
+}
+
+export default app;
