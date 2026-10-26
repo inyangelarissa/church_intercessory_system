@@ -36,7 +36,7 @@ For production deployment, the Docker image builds the Vite frontend and
 starts the Express server. The frontend and `/api` endpoints are served from
 the same origin, so signup and login do not require a separate API URL.
 
-The project also includes a Vercel catch-all serverless function in `api/`.
+The project also includes Vercel serverless functions in `api/`.
 When deploying on Vercel, set the project root to this directory (the
 directory containing `package.json`) and deploy again. This exposes
 `/api/auth/signup` and `/api/auth/login` alongside the Vite frontend.
