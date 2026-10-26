@@ -1,3 +1,14 @@
-FROM pierrezemb/gostatic
-COPY . /srv/http/
-CMD ["-port","8080","-https-promote", "-enable-logging"]
+FROM node:22-bookworm-slim
+
+WORKDIR /app
+
+COPY package.json pnpm-lock.yaml ./
+RUN npm install
+
+COPY . .
+RUN npm run build
+
+ENV NODE_ENV=production
+EXPOSE 8080
+
+CMD ["node", "server/index.js"]

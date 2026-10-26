@@ -32,6 +32,10 @@ The first time the API server starts, it creates `server/erc_masoro.sqlite3`
 and seeds it with demo data (intercessors, prayer requests, a weekly
 schedule, and activity records) matching what's shown in the UI.
 
+For production deployment, the Docker image builds the Vite frontend and
+starts the Express server. The frontend and `/api` endpoints are served from
+the same origin, so signup and login do not require a separate API URL.
+
 ### Demo login
 
 | Email | Password |

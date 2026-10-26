@@ -1,5 +1,7 @@
 import express from "express";
 import cors from "cors";
+import path from "path";
+import { fileURLToPath } from "url";
 import { db } from "./db.js";
 import authRoutes from "./routes/auth.js";
 import prayerRequestRoutes from "./routes/prayerRequests.js";
@@ -10,6 +12,8 @@ import { requireAuth } from "./auth.js";
 
 const app = express();
 const PORT = process.env.PORT || 5174;
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const clientDist = path.resolve(__dirname, "../dist");
 
 app.use(cors());
 app.use(express.json());
@@ -40,6 +44,15 @@ app.get("/api/dashboard/stats", requireAuth, (req, res) => {
   `).all();
 
   res.json({ totalIntercessors, openRequests, completedRequests, requestsCovered, sessionsThisWeek, totalTestimonies, recentRecords, urgentRequests });
+});
+
+// Serve the production Vite build from the same origin as the API.
+app.use(express.static(clientDist));
+app.get("/{*splat}", (req, res, next) => {
+  if (req.method !== "GET" || req.path.startsWith("/api/")) return next();
+  res.sendFile(path.join(clientDist, "index.html"), (err) => {
+    if (err) next(err);
+  });
 });
 
 app.use((err, req, res, next) => {
