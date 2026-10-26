@@ -52,6 +52,23 @@ router.patch("/:id", requireAuth, (req, res) => {
   const nextAssignedIntercessorId = assignedIntercessorId === undefined
     ? existing.assigned_intercessor_id
     : assignedIntercessorId;
+  if (nextAssignedIntercessorId !== null) {
+    const intercessor = db.prepare("SELECT id, status FROM intercessors WHERE id = ?").get(nextAssignedIntercessorId);
+    if (!intercessor) return res.status(404).json({ error: "Intercessor not found." });
+    if (intercessor.status !== "Active") {
+      return res.status(400).json({ error: "Only active intercessors can be assigned." });
+    }
+  }
+  if (existing.assigned_intercessor_id !== nextAssignedIntercessorId) {
+    if (existing.assigned_intercessor_id !== null) {
+      db.prepare("UPDATE intercessors SET assigned_requests = MAX(assigned_requests - 1, 0) WHERE id = ?")
+        .run(existing.assigned_intercessor_id);
+    }
+    if (nextAssignedIntercessorId !== null) {
+      db.prepare("UPDATE intercessors SET assigned_requests = assigned_requests + 1 WHERE id = ?")
+        .run(nextAssignedIntercessorId);
+    }
+  }
   db.prepare(`
     UPDATE prayer_requests
     SET status = COALESCE(?, status),

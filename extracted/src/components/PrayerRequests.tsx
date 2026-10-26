@@ -287,9 +287,9 @@ export default function PrayerRequests() {
               style={inputStyle}
             >
               <option value="">Unassigned</option>
-              {intercessors.map(intercessor => (
+              {intercessors.filter(intercessor => intercessor.status === "Active").map(intercessor => (
                 <option key={intercessor.id} value={intercessor.id}>
-                  {intercessor.name}{intercessor.status === "Inactive" ? " (Inactive)" : ""}
+                  {intercessor.name}
                 </option>
               ))}
             </select>

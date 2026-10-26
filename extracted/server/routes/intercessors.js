@@ -19,7 +19,6 @@ router.get("/", requireAuth, (req, res) => {
     SELECT id, name, initials, role, phone, email, status, joined_date AS joinedDate,
            assigned_requests AS assignedRequests, completed_prayers AS completedPrayers
     FROM intercessors
-    WHERE user_id IS NOT NULL
     ORDER BY name
   `).all();
   res.json(attachExtras(rows));

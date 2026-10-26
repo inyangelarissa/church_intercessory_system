@@ -28,7 +28,7 @@ app.use("/api/activity-records", activityRecordRoutes);
 
 // Aggregate dashboard stats, computed live from the database.
 app.get("/api/dashboard/stats", requireAuth, (req, res) => {
-  const totalIntercessors = db.prepare("SELECT COUNT(*) AS c FROM intercessors WHERE status = 'Active' AND user_id IS NOT NULL").get().c;
+  const totalIntercessors = db.prepare("SELECT COUNT(*) AS c FROM intercessors WHERE status = 'Active'").get().c;
   const openRequests = db.prepare("SELECT COUNT(*) AS c FROM prayer_requests WHERE status IN ('Open','Assigned','In Prayer')").get().c;
   const completedRequests = db.prepare("SELECT COUNT(*) AS c FROM prayer_requests WHERE status = 'Completed'").get().c;
   const requestsCovered = completedRequests;
