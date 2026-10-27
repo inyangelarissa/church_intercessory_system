@@ -1,8 +1,17 @@
 import type { View } from "../App";
-import type { AuthUser } from "../lib/api";
+import { isSenior, type AuthUser } from "../lib/api";
 import ercLogo from "../assets/erc-logo.png";
 
 const navItems: { id: View; label: string; icon: React.ReactNode }[] = [
+  {
+    id: "everything",
+    label: "Reports",
+    icon: (
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="11" cy="11" r="7" /><path d="m20 20-4-4" /><path d="M8 11h6M11 8v6" />
+      </svg>
+    ),
+  },
   {
     id: "dashboard",
     label: "Dashboard",
@@ -61,6 +70,7 @@ export default function Sidebar({ activeView, setActiveView, open, isMobile, use
   const displayName = user?.name || "Guest User";
   const displayRole = (user?.role || "").toLowerCase();
   const initials = displayName.split(/\s+/).map(w => w[0]).slice(0, 2).join("").toUpperCase();
+  const visibleNavItems = navItems.filter(item => item.id !== "everything" || isSenior(user));
 
   return (
     <aside
@@ -106,7 +116,7 @@ export default function Sidebar({ activeView, setActiveView, open, isMobile, use
 
       {/* Nav */}
       <nav className="flex-1 py-3 px-3 flex flex-col gap-1 overflow-y-auto">
-        {navItems.map((item) => {
+        {visibleNavItems.map((item) => {
           const active = activeView === item.id;
           return (
             <button

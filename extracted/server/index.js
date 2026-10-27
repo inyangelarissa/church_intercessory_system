@@ -62,6 +62,19 @@ app.use("/api/prayer-requests", prayerRequestRoutes);
 app.use("/api/intercessors", intercessorRoutes);
 app.use("/api/schedule", scheduleRoutes);
 
+app.get("/api/reports", requireAuth, async (req, res) => {
+  if (!isSenior(req.user)) return res.status(403).json({ error: "Only the Senior Intercessor can generate this report." });
+  const [users, prayerRequests] = await Promise.all([
+    all("SELECT id, name, email, phone, role, created_at FROM users ORDER BY name"),
+    all(`SELECT pr.id, pr.name, pr.contact, pr.request, pr.category, pr.priority, pr.status,
+                pr.date, COALESCE(i.name, 'Unassigned') AS assigned, pr.notes, pr.testimony
+         FROM prayer_requests pr
+         LEFT JOIN intercessors i ON i.id = pr.assigned_intercessor_id
+         ORDER BY pr.id DESC`),
+  ]);
+  res.json({ users, prayerRequests });
+});
+
 // Aggregate dashboard stats, computed live from the database.
 // Senior Intercessor sees congregation-wide numbers; an Intercessor sees numbers for their own assignments.
 app.get("/api/dashboard/stats", requireAuth, async (req, res) => {

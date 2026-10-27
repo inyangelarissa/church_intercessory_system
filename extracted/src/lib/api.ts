@@ -100,6 +100,9 @@ export const api = {
       request<{ token: string; user: AuthUser }>("/auth/login", { method: "POST", body: JSON.stringify(payload) }),
     me: () => request<{ user: AuthUser }>("/auth/me"),
   },
+  reports: {
+    all: () => request<{ users: AuthUser[]; prayerRequests: any[] }>("/reports"),
+  },
   dashboard: {
     stats: () => request<any>("/dashboard/stats"),
   },

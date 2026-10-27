@@ -136,8 +136,8 @@ create a fresh database and update the two `TURSO_*` variables.
 
 ```
 src/                  React frontend
-  components/         Page components (Home, Auth, Dashboard, PrayerRequests,
-                       Intercessors, Schedule, Sidebar)
+  components/         Page components (Home, Auth, Dashboard, Everything,
+                       PrayerRequests, Intercessors, Schedule, Sidebar)
   lib/api.ts           Frontend API client (fetch wrapper, JWT handling)
 server/                Express backend
   db.js                Database connection + schema (libSQL)
@@ -159,6 +159,7 @@ Everything except the three public routes needs `Authorization: Bearer <token>`.
 | POST | `/api/auth/login` | public | Log in, returns a JWT |
 | POST | `/api/prayer-requests/public` | public | Congregation submits a request (rate-limited) |
 | GET | `/api/auth/me` | any | Current user |
+| GET | `/api/reports` | Senior | All users and prayer requests for the Everything page and CSV reports |
 | GET | `/api/dashboard/stats` | any | Counts (scoped to own assignments for Intercessors) |
 | GET | `/api/prayer-requests` | any | Senior: all. Intercessor: only those assigned to them |
 | POST | `/api/prayer-requests` | Senior | Record a request on someone's behalf |
