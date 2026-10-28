@@ -2,10 +2,10 @@ import { Router } from "express";
 import bcrypt from "bcryptjs";
 import { get, transaction } from "../db.js";
 import { signToken, requireAuth, INTERCESSOR_ROLE, SENIOR_ROLE } from "../auth.js";
+import { checkEmail, checkPhone } from "../validation.js";
 
 const router = Router();
 
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PUBLIC_USER = "SELECT id, name, email, phone, role, created_at FROM users WHERE id = ?";
 
 router.post("/signup", async (req, res) => {
@@ -13,10 +13,11 @@ router.post("/signup", async (req, res) => {
   if (!name?.trim() || !email?.trim() || !password) {
     return res.status(400).json({ error: "Name, email and password are required." });
   }
-  const cleanEmail = email.trim().toLowerCase();
-  if (!EMAIL_RE.test(cleanEmail)) {
-    return res.status(400).json({ error: "Please enter a valid email address." });
-  }
+  const emailCheck = checkEmail(email);
+  if (!emailCheck.ok) return res.status(400).json({ error: emailCheck.error });
+  const phoneCheck = checkPhone(phone);
+  if (!phoneCheck.ok) return res.status(400).json({ error: phoneCheck.error });
+  const cleanEmail = emailCheck.value;
   if (String(password).length < 6) {
     return res.status(400).json({ error: "Password must be at least 6 characters." });
   }
@@ -29,7 +30,7 @@ router.post("/signup", async (req, res) => {
   }
 
   const cleanName = name.trim();
-  const cleanPhone = phone?.trim() || "";
+  const cleanPhone = phoneCheck.value;
   const initials = cleanName.split(/\s+/).map(part => part[0]).slice(0, 2).join("").toUpperCase();
   const password_hash = bcrypt.hashSync(String(password), 10);
 

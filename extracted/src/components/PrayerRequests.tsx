@@ -1,5 +1,7 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { api, errorMessage, isSenior, type AuthUser } from "../lib/api";
+import { matchesQuery, tokenize } from "../lib/search";
+import SearchInput, { Highlight } from "./SearchInput";
 
 type Priority = "Urgent" | "High" | "Normal";
 type Status = "Open" | "Assigned" | "In Prayer" | "Completed";
@@ -32,7 +34,7 @@ const statusConfig: Record<Status, { bg: string; text: string }> = {
 const categories = ["All", "Healing", "Guidance", "Family", "Finances", "Mental Health", "Pregnancy", "Salvation", "Other"];
 const statuses: Status[] = ["Open", "Assigned", "In Prayer", "Completed"];
 
-export default function PrayerRequests({ user }: { user: AuthUser | null }) {
+export default function PrayerRequests({ user, focus }: { user: AuthUser | null; focus?: { id: number; nonce: number } | null }) {
   const senior = isSenior(user);
   const [requests, setRequests] = useState<Request[]>([]);
   const [loading, setLoading] = useState(true);
@@ -45,6 +47,8 @@ export default function PrayerRequests({ user }: { user: AuthUser | null }) {
   const [progressStatus, setProgressStatus] = useState<Status>("Open");
   const [progressNotes, setProgressNotes] = useState("");
   const [testimony, setTestimony] = useState("");
+  const [query, setQuery] = useState("");
+  const handledFocus = useRef(0);
 
   useEffect(() => {
     api.prayerRequests.list()
@@ -61,10 +65,25 @@ export default function PrayerRequests({ user }: { user: AuthUser | null }) {
       .catch((e) => setError(errorMessage(e)));
   }, [senior]);
 
+  const tokens = useMemo(() => tokenize(query), [query]);
   const filtered = requests.filter(r =>
     (catFilter === "All" || r.category === catFilter) &&
-    (statusFilter === "All" || r.status === statusFilter)
+    (statusFilter === "All" || r.status === statusFilter) &&
+    matchesQuery(tokens, [r.name, r.contact, r.request, r.category, r.priority, r.status, r.assigned, r.notes, r.testimony])
   );
+
+  // Arrived from the top-bar search: clear the filters and open that request.
+  useEffect(() => {
+    if (!focus || loading || handledFocus.current === focus.nonce) return;
+    handledFocus.current = focus.nonce;
+    const found = requests.find(item => item.id === focus.id);
+    if (!found) return;
+    setCatFilter("All");
+    setStatusFilter("All");
+    setQuery("");
+    openRequest(found);
+    window.setTimeout(() => document.getElementById(`request-row-${found.id}`)?.scrollIntoView({ behavior: "smooth", block: "center" }), 80);
+  }, [focus, loading, requests]);
 
   async function assignRequest(intercessorId: string) {
     if (!selected || !senior) return;
@@ -127,6 +146,14 @@ export default function PrayerRequests({ user }: { user: AuthUser | null }) {
         <p className="rounded-lg px-3 py-2 text-sm" style={{ background: "rgba(139,0,0,0.08)", color: "#8b0000" }}>{error}</p>
       )}
 
+      {/* Search */}
+      <div className="animate-fade-up delay-100 max-w-xl">
+        <SearchInput value={query} onChange={setQuery} placeholder="Search by name, request, category, status, assigned to…" label="Search prayer requests" />
+        {query.trim() && !loading && (
+          <p className="text-xs mt-2" style={{ color: "#94a3b8" }}>{filtered.length} of {requests.length} requests match “{query.trim()}”</p>
+        )}
+      </div>
+
       {/* Filters */}
       <div className="animate-fade-up delay-100 flex flex-col sm:flex-row flex-wrap gap-y-3 gap-x-2 sm:items-center sm:justify-between">
         <div className="flex flex-wrap gap-2">
@@ -162,6 +189,7 @@ export default function PrayerRequests({ user }: { user: AuthUser | null }) {
             {filtered.map((r, i) => (
               <tr
                 key={r.id}
+                id={`request-row-${r.id}`}
                 onClick={() => { if (selected?.id === r.id) { setSelected(null); } else { openRequest(r); } }}
                 className="cursor-pointer transition-colors hover:bg-slate-50 border-b"
                 style={{ borderColor: "rgba(10,22,40,0.04)", background: selected?.id === r.id ? "rgba(139,0,0,0.03)" : "transparent", animationDelay: `${i * 40}ms` }}
@@ -171,10 +199,10 @@ export default function PrayerRequests({ user }: { user: AuthUser | null }) {
                     <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0" style={{ background: "#0a1628", color: "#fff", fontFamily: "'Cinzel', serif" }}>
                       {r.initials}
                     </div>
-                    <span className="font-medium" style={{ color: "#0a1628" }}>{r.name}</span>
+                    <span className="font-medium" style={{ color: "#0a1628" }}><Highlight text={r.name} tokens={tokens} /></span>
                   </div>
                 </td>
-                <td className="px-5 py-4 max-w-xs"><p className="truncate text-sm" style={{ color: "#64748b" }}>{r.request}</p></td>
+                <td className="px-5 py-4 max-w-xs"><p className="truncate text-sm" style={{ color: "#64748b" }}><Highlight text={r.request} tokens={tokens} /></p></td>
                 <td className="px-5 py-4"><span className="text-xs px-2.5 py-1 rounded-full font-medium" style={{ background: "rgba(10,22,40,0.06)", color: "#0a1628" }}>{r.category}</span></td>
                 <td className="px-5 py-4">
                   <span className="text-xs px-2.5 py-1 rounded-full flex items-center gap-1 w-fit border font-medium" style={{ background: priorityConfig[r.priority].bg, color: priorityConfig[r.priority].text, borderColor: priorityConfig[r.priority].border }}>
@@ -193,7 +221,7 @@ export default function PrayerRequests({ user }: { user: AuthUser | null }) {
           <p className="px-6 py-10 text-sm" style={{ color: "#64748b" }}>
             {requests.length === 0
               ? (senior ? "No prayer requests yet. Requests submitted from the home page will appear here." : "Nothing has been assigned to you yet. The Senior Intercessor will assign prayer requests to you.")
-              : "No requests match the selected filters."}
+              : query.trim() ? `No requests match “${query.trim()}”.` : "No requests match the selected filters."}
           </p>
         )}
         </div>

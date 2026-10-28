@@ -116,3 +116,25 @@ h1, h2, h3, h4 {
   border: 2px solid #8b0000;
   animation: pulseRing 2s ease-out infinite;
 }
+
+
+/* ── Printing (Reports page → Print / Save as PDF) ───────────────── */
+.hidden-screen { display: none; }
+
+@media print {
+  @page { margin: 14mm; }
+  html, body { background: #fff !important; }
+  .no-print, aside { display: none !important; }
+  .print-reset { margin-left: 0 !important; min-height: 0 !important; }
+  main { padding: 0 !important; }
+  .animate-fade-up, .animate-fade-in, .animate-scale-in { animation: none !important; opacity: 1 !important; transform: none !important; }
+  .report-sheet {
+    box-shadow: none !important; border: none !important; padding: 0 !important;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+  }
+  .report-sheet .overflow-x-auto { overflow: visible !important; }
+  .report-sheet table { font-size: 10.5px; }
+  .report-sheet thead { display: table-header-group; }
+  .report-sheet tr { break-inside: avoid; }
+  .hidden-screen { display: block; }
+}

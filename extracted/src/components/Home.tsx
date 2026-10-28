@@ -2,6 +2,7 @@ import { useState } from "react";
 import ercHeroBg from "../assets/erc-hero-bg.png";
 import ercLogo from "../assets/erc-logo.png";
 import { api, errorMessage } from "../lib/api";
+import { checkEmail, checkPhone } from "../lib/validation";
 
 interface HomeProps { onEnter: () => void; }
 
@@ -27,7 +28,24 @@ export default function Home({ onEnter }: HomeProps) {
     const e: Record<string, string> = {};
     if (!form.name && !form.anonymous) e.name = "Please enter your name or submit anonymously.";
     if (!form.request.trim()) e.request = "Please describe your prayer need.";
+    // Phone and email are optional, but if given they must be valid. Anonymous requests send neither.
+    if (!form.anonymous) {
+      const phone = checkPhone(form.contact);
+      if (!phone.ok) e.contact = phone.error ?? "";
+      const email = checkEmail(form.email, { required: false });
+      if (!email.ok) e.email = email.error ?? "";
+    }
     return e;
+  }
+
+  /** Checks one contact field as the person leaves it (and while typing, once an error is showing). */
+  function checkField(field: "contact" | "email", value: string) {
+    const result = field === "contact" ? checkPhone(value) : checkEmail(value, { required: false });
+    setErrors(previous => {
+      const next = { ...previous };
+      if (result.ok) delete next[field]; else next[field] = result.error ?? "";
+      return next;
+    });
   }
 
   function handleSubmit(ev: React.FormEvent) {
@@ -39,8 +57,8 @@ export default function Home({ onEnter }: HomeProps) {
     setFormState("submitting");
     api.prayerRequests.submitPublic({
       name: form.name.trim(),
-      contact: form.contact.trim(),
-      email: form.email.trim(),
+      contact: checkPhone(form.contact).value,
+      email: checkEmail(form.email, { required: false }).value,
       category: form.category,
       request: form.request.trim(),
       anonymous: form.anonymous,
@@ -217,7 +235,7 @@ export default function Home({ onEnter }: HomeProps) {
                 </button>
               </div>
             ) : (
-              <form onSubmit={handleSubmit} className="p-6 sm:p-8 space-y-5">
+              <form onSubmit={handleSubmit} className="p-6 sm:p-8 space-y-5" noValidate>
                 {/* Anonymous toggle */}
                 <div className="flex items-center justify-between p-4 rounded-xl" style={{ background: "#f8faff", border: "1.5px solid rgba(10,22,40,0.08)" }}>
                   <div>
@@ -257,21 +275,27 @@ export default function Home({ onEnter }: HomeProps) {
                     <label className="block text-sm font-semibold mb-1.5" style={{ color: "#0a1628" }}>Phone</label>
                     <input
                       value={form.contact}
-                      onChange={e => setForm({ ...form, contact: e.target.value })}
-                      style={inputCls}
-                      placeholder="+254 7XX XXX XXX"
+                      onChange={e => { setForm({ ...form, contact: e.target.value }); if (errors.contact) checkField("contact", e.target.value); }}
+                      onBlur={e => checkField("contact", e.target.value)}
+                      style={{ ...inputCls, borderColor: errors.contact ? "#8b0000" : "rgba(10,22,40,0.13)" }}
+                      placeholder="+250 7XX XXX XXX"
                       type="tel"
+                      autoComplete="tel"
                     />
+                    {errors.contact && <p style={errCls}>{errors.contact}</p>}
                   </div>
                   <div>
                     <label className="block text-sm font-semibold mb-1.5" style={{ color: "#0a1628" }}>Email</label>
                     <input
                       value={form.email}
-                      onChange={e => setForm({ ...form, email: e.target.value })}
-                      style={inputCls}
+                      onChange={e => { setForm({ ...form, email: e.target.value }); if (errors.email) checkField("email", e.target.value); }}
+                      onBlur={e => checkField("email", e.target.value)}
+                      style={{ ...inputCls, borderColor: errors.email ? "#8b0000" : "rgba(10,22,40,0.13)" }}
                       placeholder="your@email.com"
                       type="email"
+                      autoComplete="email"
                     />
+                    {errors.email && <p style={errCls}>{errors.email}</p>}
                   </div>
                 </div>
 

@@ -1,17 +1,8 @@
 import type { View } from "../App";
-import { isSenior, type AuthUser } from "../lib/api";
+import type { AuthUser } from "../lib/api";
 import ercLogo from "../assets/erc-logo.png";
 
 const navItems: { id: View; label: string; icon: React.ReactNode }[] = [
-  {
-    id: "everything",
-    label: "Reports",
-    icon: (
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-        <circle cx="11" cy="11" r="7" /><path d="m20 20-4-4" /><path d="M8 11h6M11 8v6" />
-      </svg>
-    ),
-  },
   {
     id: "dashboard",
     label: "Dashboard",
@@ -54,6 +45,18 @@ const navItems: { id: View; label: string; icon: React.ReactNode }[] = [
   },
 ];
 
+// Reports sits apart from the page links, at the bottom of the menu.
+const reportsItem: { id: View; label: string; icon: React.ReactNode } = {
+  id: "reports",
+  label: "Reports",
+  icon: (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" />
+      <path d="M8 18v-4M12 18v-7M16 18v-2" />
+    </svg>
+  ),
+};
+
 interface SidebarProps {
   activeView: View;
   setActiveView: (v: View) => void;
@@ -70,11 +73,40 @@ export default function Sidebar({ activeView, setActiveView, open, isMobile, use
   const displayName = user?.name || "Guest User";
   const displayRole = (user?.role || "").toLowerCase();
   const initials = displayName.split(/\s+/).map(w => w[0]).slice(0, 2).join("").toUpperCase();
-  const visibleNavItems = navItems.filter(item => item.id !== "everything" || isSenior(user));
+
+  const renderItem = (item: { id: View; label: string; icon: React.ReactNode }) => {
+    const active = activeView === item.id;
+    return (
+      <button
+        key={item.id}
+        onClick={() => setActiveView(item.id)}
+        className="flex items-center gap-3 px-3 py-3 rounded-xl w-full text-left transition-all duration-200 group relative"
+        style={{ background: active ? "rgba(139,0,0,0.22)" : "transparent" }}
+      >
+        {active && (
+          <span className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 rounded-r-full" style={{ background: "#8b0000" }} />
+        )}
+        <span className="shrink-0 transition-colors duration-200" style={{ color: active ? "#fff" : "rgba(255,255,255,0.45)" }}>
+          {item.icon}
+        </span>
+        {(!collapsed || isMobile) && (
+          <span className="text-sm font-medium truncate" style={{ color: active ? "#fff" : "rgba(255,255,255,0.55)", fontFamily: "'Outfit', sans-serif" }}>
+            {item.label}
+          </span>
+        )}
+        {collapsed && !isMobile && (
+          <div className="absolute left-14 px-3 py-1.5 rounded-lg text-xs whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-50 shadow-lg"
+            style={{ background: "#0a1628", color: "#fff", border: "1px solid rgba(255,255,255,0.1)" }}>
+            {item.label}
+          </div>
+        )}
+      </button>
+    );
+  };
 
   return (
     <aside
-      className="fixed top-0 left-0 h-full z-40 flex flex-col transition-all duration-300"
+      className="no-print fixed top-0 left-0 h-full z-40 flex flex-col transition-all duration-300"
       style={{
         width: isMobile ? (open ? "80vw" : 0) : sidebarWidth,
         maxWidth: 280,
@@ -116,35 +148,12 @@ export default function Sidebar({ activeView, setActiveView, open, isMobile, use
 
       {/* Nav */}
       <nav className="flex-1 py-3 px-3 flex flex-col gap-1 overflow-y-auto">
-        {visibleNavItems.map((item) => {
-          const active = activeView === item.id;
-          return (
-            <button
-              key={item.id}
-              onClick={() => setActiveView(item.id)}
-              className="flex items-center gap-3 px-3 py-3 rounded-xl w-full text-left transition-all duration-200 group relative"
-              style={{ background: active ? "rgba(139,0,0,0.22)" : "transparent" }}
-            >
-              {active && (
-                <span className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 rounded-r-full" style={{ background: "#8b0000" }} />
-              )}
-              <span className="shrink-0 transition-colors duration-200" style={{ color: active ? "#fff" : "rgba(255,255,255,0.45)" }}>
-                {item.icon}
-              </span>
-              {(!collapsed || isMobile) && (
-                <span className="text-sm font-medium truncate" style={{ color: active ? "#fff" : "rgba(255,255,255,0.55)", fontFamily: "'Outfit', sans-serif" }}>
-                  {item.label}
-                </span>
-              )}
-              {collapsed && !isMobile && (
-                <div className="absolute left-14 px-3 py-1.5 rounded-lg text-xs whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-50 shadow-lg"
-                  style={{ background: "#0a1628", color: "#fff", border: "1px solid rgba(255,255,255,0.1)" }}>
-                  {item.label}
-                </div>
-              )}
-            </button>
-          );
-        })}
+        {navItems.map(renderItem)}
+
+        {/* Pushes Reports to the bottom of the menu */}
+        <div className="flex-1" />
+        <div className="mx-3 mb-2 border-t" style={{ borderColor: "rgba(255,255,255,0.08)" }} />
+        {renderItem(reportsItem)}
       </nav>
 
       {/* Footer user */}

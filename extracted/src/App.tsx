@@ -1,29 +1,27 @@
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect } from "react";
 import Home from "./components/Home";
 import Auth from "./components/Auth";
 import Dashboard from "./components/Dashboard";
 import PrayerRequests from "./components/PrayerRequests";
 import Intercessors from "./components/Intercessors";
 import Schedule from "./components/Schedule";
-import Everything from "./components/Everything";
+import Reports from "./components/Reports";
+import GlobalSearch, { type SearchTarget } from "./components/GlobalSearch";
 import Sidebar from "./components/Sidebar";
 import ercLogo from "./assets/erc-logo.png";
 import { api, getStoredUser, setSession, getToken, clearSession, type AuthUser } from "./lib/api";
 
-export type View = "home" | "auth" | "dashboard" | "requests" | "intercessors" | "schedule" | "everything";
+export type View = "home" | "auth" | "dashboard" | "requests" | "intercessors" | "schedule" | "reports";
 
-const PROTECTED_VIEWS: View[] = ["dashboard", "requests", "intercessors", "schedule", "everything"];
+const PROTECTED_VIEWS: View[] = ["dashboard", "requests", "intercessors", "schedule", "reports"];
 
 export default function App() {
   const [activeView, setActiveView] = useState<View>("home");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const [user, setUser] = useState<AuthUser | null>(() => getStoredUser());
-  const [globalSearch, setGlobalSearch] = useState("");
-  const [searchData, setSearchData] = useState<{ requests: any[]; intercessors: any[]; schedule: any[] }>({ requests: [], intercessors: [], schedule: [] });
-  const [searchLoading, setSearchLoading] = useState(false);
-  const [searchError, setSearchError] = useState("");
-  const searchRef = useRef<HTMLDivElement>(null);
+  // Set when the person picks a search result, so the destination page can open that exact record.
+  const [focus, setFocus] = useState<{ view: View; id: number; nonce: number } | null>(null);
 
   useEffect(() => {
     const check = () => {
@@ -35,39 +33,6 @@ export default function App() {
     check();
     window.addEventListener("resize", check);
     return () => window.removeEventListener("resize", check);
-  }, []);
-
-  useEffect(() => {
-    if (!user) {
-      setSearchData({ requests: [], intercessors: [], schedule: [] });
-      return;
-    }
-    let cancelled = false;
-    setSearchLoading(true);
-    setSearchError("");
-    Promise.allSettled([api.prayerRequests.list(), api.intercessors.list(), api.schedule.list()]).then(results => {
-      if (cancelled) return;
-      const [requests, intercessors, schedule] = results;
-      setSearchData({
-        requests: requests.status === "fulfilled" ? requests.value : [],
-        intercessors: intercessors.status === "fulfilled" ? intercessors.value : [],
-        schedule: schedule.status === "fulfilled" ? schedule.value : [],
-      });
-      if (results.some(result => result.status === "rejected")) {
-        setSearchError("Some search data could not be loaded.");
-      }
-    }).finally(() => {
-      if (!cancelled) setSearchLoading(false);
-    });
-    return () => { cancelled = true; };
-  }, [user]);
-
-  useEffect(() => {
-    function closeSearch(event: MouseEvent) {
-      if (!searchRef.current?.contains(event.target as Node)) setGlobalSearch("");
-    }
-    document.addEventListener("mousedown", closeSearch);
-    return () => document.removeEventListener("mousedown", closeSearch);
   }, []);
 
   // Confirm the stored session with the server (also picks up role changes).
@@ -96,12 +61,15 @@ export default function App() {
   function navigate(view: View) {
     if (PROTECTED_VIEWS.includes(view) && !user) {
       setActiveView("auth");
-    } else if (view === "everything" && !isSenior(user)) {
-      setActiveView("dashboard");
     } else {
       setActiveView(view);
     }
     if (isMobile) setSidebarOpen(false);
+  }
+
+  function handleSearchSelect(target: SearchTarget) {
+    navigate(target.view);
+    if (target.id !== undefined) setFocus({ view: target.view, id: target.id, nonce: Date.now() });
   }
 
   function handleAuthenticated(authedUser: AuthUser) {
@@ -117,24 +85,14 @@ export default function App() {
 
   const isHome = activeView === "home";
   const isAuth = activeView === "auth";
-  const searchTerm = globalSearch.trim().toLowerCase();
-  const searchResults = useMemo(() => {
-    if (!searchTerm) return [];
-    return [
-      ...searchData.requests.filter(item => [item.name, item.request, item.category, item.status, item.assigned].some(value => String(value ?? "").toLowerCase().includes(searchTerm))).slice(0, 5).map(item => ({ title: item.name, detail: item.request, view: "requests" as View })),
-      ...searchData.intercessors.filter(item => [item.name, item.email, item.role, item.status].some(value => String(value ?? "").toLowerCase().includes(searchTerm))).slice(0, 5).map(item => ({ title: item.name, detail: `Intercessor · ${item.status}`, view: "intercessors" as View })),
-      ...searchData.schedule.filter(item => [item.title, item.day, item.focus, item.venue].some(value => String(value ?? "").toLowerCase().includes(searchTerm))).slice(0, 5).map(item => ({ title: item.title, detail: `Schedule · ${item.day} ${item.time}`, view: "schedule" as View })),
-    ].slice(0, 8);
-  }, [searchData, searchTerm]);
-
   const views: Record<View, React.ReactNode> = {
     home: <Home onEnter={() => navigate("auth")} />,
     auth: <Auth onAuthenticated={handleAuthenticated} onBack={() => navigate("home")} />,
     dashboard: <Dashboard user={user} />,
-    requests: <PrayerRequests user={user} />,
-    intercessors: <Intercessors user={user} />,
-    schedule: <Schedule />,
-    everything: <Everything user={user} />,
+    requests: <PrayerRequests user={user} focus={focus?.view === "requests" ? focus : null} />,
+    intercessors: <Intercessors user={user} focus={focus?.view === "intercessors" ? focus : null} />,
+    schedule: <Schedule focus={focus?.view === "schedule" ? focus : null} />,
+    reports: <Reports user={user} />,
   };
 
   if (isAuth) {
@@ -176,7 +134,7 @@ export default function App() {
       {/* Mobile overlay backdrop */}
       {isMobile && sidebarOpen && (
         <div
-          className="fixed inset-0 z-30 bg-black/40"
+          className="fixed inset-0 z-30 bg-black/40 no-print"
           style={{ backdropFilter: "blur(2px)" }}
           onClick={() => setSidebarOpen(false)}
         />
@@ -193,12 +151,12 @@ export default function App() {
       />
 
       <div
-        className="flex-1 flex flex-col min-h-screen transition-all duration-300"
+        className="print-reset flex-1 flex flex-col min-h-screen transition-all duration-300"
         style={{ marginLeft: isMobile ? 0 : sidebarOpen ? 260 : 72 }}
       >
         {/* Top bar */}
         <header
-          className="sticky top-0 z-20 flex items-center justify-between px-4 sm:px-8 py-3.5 border-b"
+          className="no-print sticky top-0 z-20 flex items-center justify-between px-4 sm:px-8 py-3.5 border-b"
           style={{ background: "rgba(248,250,255,0.95)", backdropFilter: "blur(12px)", borderColor: "rgba(10,22,40,0.08)" }}
         >
           <div className="flex items-center gap-3">
@@ -223,27 +181,7 @@ export default function App() {
             </button>
           </div>
           <div className="flex items-center gap-3 flex-1 justify-end">
-            <div ref={searchRef} className="relative w-full max-w-sm">
-              <svg className="absolute left-3 top-2.5" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#64748b" strokeWidth="2"><circle cx="11" cy="11" r="7" /><path d="m20 20-4-4" /></svg>
-              <input
-                value={globalSearch}
-                onChange={event => setGlobalSearch(event.target.value)}
-                placeholder="Search requests, people, schedule..."
-                aria-label="Search across the app"
-                className="w-full rounded-xl py-2 pl-9 pr-3 text-sm outline-none"
-                style={{ background: "#fff", border: "1px solid rgba(10,22,40,0.12)", color: "#0a1628" }}
-              />
-              {searchTerm && (
-                <div className="absolute top-11 left-0 right-0 z-50 rounded-xl border bg-white overflow-hidden shadow-xl" style={{ borderColor: "rgba(10,22,40,0.1)" }}>
-                  {searchLoading ? <p className="px-4 py-3 text-sm" style={{ color: "#64748b" }}>Loading search data...</p> : searchError ? <p className="px-4 py-3 text-sm" style={{ color: "#8b0000" }}>{searchError}</p> : searchResults.length > 0 ? searchResults.map((result, index) => (
-                    <button key={`${result.view}-${index}`} onClick={() => { navigate(result.view); setGlobalSearch(""); }} className="w-full text-left px-4 py-3 hover:bg-slate-50 border-b last:border-b-0" style={{ borderColor: "rgba(10,22,40,0.06)" }}>
-                      <p className="text-sm font-semibold truncate" style={{ color: "#0a1628" }}>{result.title}</p>
-                      <p className="text-xs truncate mt-0.5" style={{ color: "#64748b" }}>{result.detail}</p>
-                    </button>
-                  )) : <p className="px-4 py-3 text-sm" style={{ color: "#64748b" }}>No matching records.</p>}
-                </div>
-              )}
-            </div>
+            <GlobalSearch user={user} onSelect={handleSearchSelect} />
             <div className="text-right hidden md:block">
               <p className="text-xs font-medium" style={{ color: "#0a1628" }}>
                 {new Date().toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" })}

@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { all, get, run } from "../db.js";
 import { requireAuth, requireSenior, isSenior, intercessorIdForUser } from "../auth.js";
+import { checkEmail, checkPhone, checkContact } from "../validation.js";
 
 const router = Router();
 
@@ -48,7 +49,15 @@ router.post("/public", publicRateLimit, async (req, res) => {
   if (!cleanName) return res.status(400).json({ error: "Please enter your name or submit anonymously." });
 
   const cleanCategory = CATEGORIES.includes(category) ? category : "Other";
-  const cleanContact = isAnonymous ? "" : [contact, email].map(v => (typeof v === "string" ? v.trim().slice(0, 120) : "")).filter(Boolean).join(" · ");
+  // Phone and email are optional, but when given they must be valid (anonymous requests keep neither).
+  let cleanContact = "";
+  if (!isAnonymous) {
+    const phoneCheck = checkPhone(contact);
+    if (!phoneCheck.ok) return res.status(400).json({ error: phoneCheck.error });
+    const emailCheck = checkEmail(email, { required: false });
+    if (!emailCheck.ok) return res.status(400).json({ error: emailCheck.error });
+    cleanContact = [phoneCheck.value, emailCheck.value].filter(Boolean).join(" · ");
+  }
 
   await run(
     `INSERT INTO prayer_requests (name, initials, contact, request, category, priority, status, date, notes)
@@ -78,10 +87,12 @@ router.post("/", requireAuth, requireSenior, async (req, res) => {
   if (!name?.trim() || !request?.trim() || !category?.trim()) {
     return res.status(400).json({ error: "Name, request details and category are required." });
   }
+  const contactCheck = checkContact(contact);
+  if (!contactCheck.ok) return res.status(400).json({ error: contactCheck.error });
   const info = await run(
     `INSERT INTO prayer_requests (name, initials, contact, request, category, priority, status, date, notes)
      VALUES (?, ?, ?, ?, ?, ?, 'Open', ?, ?)`,
-    [name.trim(), initialsOf(name), contact?.trim() || "", request.trim(), category.trim(),
+    [name.trim(), initialsOf(name), contactCheck.value, request.trim(), category.trim(),
       PRIORITIES.includes(priority) ? priority : "Normal", today(), notes?.trim() || ""]
   );
   res.status(201).json(await getOne(info.lastInsertRowid));

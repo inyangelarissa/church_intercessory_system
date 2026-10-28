@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { all, get, run, transaction } from "../db.js";
 import { requireAuth, requireSenior } from "../auth.js";
+import { checkEmail, checkPhone } from "../validation.js";
 
 const router = Router();
 
@@ -42,7 +43,11 @@ router.post("/", requireAuth, requireSenior, async (req, res) => {
   if (!name?.trim() || !role?.trim()) {
     return res.status(400).json({ error: "Name and role are required." });
   }
-  const cleanEmail = email?.trim().toLowerCase() || "";
+  const emailCheck = checkEmail(email, { required: false });
+  if (!emailCheck.ok) return res.status(400).json({ error: emailCheck.error });
+  const phoneCheck = checkPhone(phone);
+  if (!phoneCheck.ok) return res.status(400).json({ error: phoneCheck.error });
+  const cleanEmail = emailCheck.value;
   if (cleanEmail && await get("SELECT id FROM intercessors WHERE LOWER(email) = ?", [cleanEmail])) {
     return res.status(409).json({ error: "An intercessor with this email is already registered." });
   }
@@ -55,7 +60,7 @@ router.post("/", requireAuth, requireSenior, async (req, res) => {
     const info = await tx.run(
       `INSERT INTO intercessors (user_id, name, initials, role, phone, email, status, joined_date)
        VALUES (?, ?, ?, ?, ?, ?, 'Active', ?)`,
-      [account?.id ?? null, name.trim(), initials, role.trim(), phone?.trim() || "", cleanEmail, joined_date]
+      [account?.id ?? null, name.trim(), initials, role.trim(), phoneCheck.value, cleanEmail, joined_date]
     );
     const newId = info.lastInsertRowid;
     for (const s of (Array.isArray(specialization) ? specialization : [])) {

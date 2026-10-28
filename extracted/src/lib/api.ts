@@ -16,6 +16,33 @@ export interface AuthUser {
   created_at?: string;
 }
 
+export interface ReportRequest {
+  id: number; name: string; contact: string | null; request: string; category: string; priority: string;
+  status: string; date: string; assigned: string; notes: string | null; testimony: string | null;
+}
+export interface ReportIntercessor {
+  id: number; name: string; role: string; phone: string | null; email: string | null; status: string; joinedDate: string;
+  assignedRequests: number; completedPrayers: number; testimonies: number; specializations: string | null; availability: string | null;
+}
+export interface ReportSession {
+  id: number; title: string; day: string; time: string; duration: string; venue: string; focus: string;
+  recurrence: string; lead: string; team: string | null;
+}
+export interface ReportActivity {
+  id: number; sessionTitle: string; recordDate: string; lead: string; attendees: number; requestsCovered: number;
+  duration: string; outcome: string; notes: string | null; testimonies: number;
+}
+export interface ReportData {
+  /** "all": the Senior Intercessor sees everything. "mine": an Intercessor sees only their own assignments. */
+  scope: "all" | "mine";
+  generatedAt: string;
+  users: AuthUser[];
+  prayerRequests: ReportRequest[];
+  intercessors: ReportIntercessor[];
+  sessions: ReportSession[];
+  activityRecords: ReportActivity[];
+}
+
 export function isSenior(user: AuthUser | null | undefined): boolean {
   return user?.role === SENIOR_ROLE;
 }
@@ -101,7 +128,7 @@ export const api = {
     me: () => request<{ user: AuthUser }>("/auth/me"),
   },
   reports: {
-    all: () => request<{ users: AuthUser[]; prayerRequests: any[] }>("/reports"),
+    all: () => request<ReportData>("/reports"),
   },
   dashboard: {
     stats: () => request<any>("/dashboard/stats"),

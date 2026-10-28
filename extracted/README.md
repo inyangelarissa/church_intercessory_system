@@ -132,21 +132,43 @@ npm run server
 On Turso, drop the tables from the Turso shell (`turso db shell erc-masoro`) or
 create a fresh database and update the two `TURSO_*` variables.
 
+## Validation, search and reports
+
+- **Email and phone validation.** Sign-up, login, the intercessor form and the public
+  prayer-request form check both fields as you leave them, and the server re-checks
+  every submission. Phones accept Rwandan numbers (`0788 123 456`, `+250 788 123 456`)
+  and international `+` numbers; they are saved in one format (`+250 788 123 456`).
+  The rules live in `src/lib/validation.ts` and `server/validation.js` - keep them in
+  sync. Run `npm test` for the server tests.
+- **Search.** The top-bar box searches requests, intercessors, sessions and pages as you
+  type (all words must match; arrow keys + Enter work; `/` focuses it). Picking a result
+  opens that record. Prayer Requests, Intercessors, Schedule and Reports each also have
+  their own search box.
+- **Reports.** The last item in the menu. Choose a report (Prayer Requests, Testimonies,
+  Intercessors, Prayer Schedule, Session Activity, User Accounts), filter by date,
+  status, category and so on, then **Download CSV** or **Print / Save as PDF**.
+  Intercessors only see their own assignments; user accounts are Senior-only.
+
 ## Project structure
 
 ```
 src/                  React frontend
-  components/         Page components (Home, Auth, Dashboard, Everything,
-                       PrayerRequests, Intercessors, Schedule, Sidebar)
+  components/         Page components (Home, Auth, Dashboard, Reports,
+                       PrayerRequests, Intercessors, Schedule, Sidebar,
+                       GlobalSearch, SearchInput)
   lib/api.ts           Frontend API client (fetch wrapper, JWT handling)
+  lib/validation.ts    Email + phone validation (browser copy)
+  lib/search.ts        Search matching and highlighting
+  lib/reports.ts       CSV export, date ranges and counting for reports
 server/                Express backend
   db.js                Database connection + schema (libSQL)
   auth.js              JWT sign/verify + role middleware
   seniorAccount.js     Creates the Senior Intercessor account
   scripts/             create-senior.js
+  validation.js        Email + phone validation (server copy, with tests)
   index.js              App entry point, mounts routes
   routes/               One file per resource (auth, prayerRequests,
-                       intercessors, schedule)
+                       intercessors, schedule, reports)
 ```
 
 ## API overview
@@ -159,7 +181,7 @@ Everything except the three public routes needs `Authorization: Bearer <token>`.
 | POST | `/api/auth/login` | public | Log in, returns a JWT |
 | POST | `/api/prayer-requests/public` | public | Congregation submits a request (rate-limited) |
 | GET | `/api/auth/me` | any | Current user |
-| GET | `/api/reports` | Senior | All users and prayer requests for the Everything page and CSV reports |
+| GET | `/api/reports` | any | Data for the Reports page. Senior: everything, including user accounts. Intercessor: only requests assigned to them |
 | GET | `/api/dashboard/stats` | any | Counts (scoped to own assignments for Intercessors) |
 | GET | `/api/prayer-requests` | any | Senior: all. Intercessor: only those assigned to them |
 | POST | `/api/prayer-requests` | Senior | Record a request on someone's behalf |

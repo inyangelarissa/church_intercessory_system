@@ -1,5 +1,8 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { api, errorMessage, isSenior, type AuthUser } from "../lib/api";
+import { checkEmail, checkPhone } from "../lib/validation";
+import { matchesQuery, tokenize } from "../lib/search";
+import SearchInput, { Highlight } from "./SearchInput";
 
 interface Intercessor {
   id: number; name: string; role: string; phone: string; email: string;
@@ -11,7 +14,7 @@ interface Intercessor {
 const days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const roleColors = ["#8b0000", "#0a1628", "#163058", "#5a0000", "#102447", "#64748b"];
 
-export default function Intercessors({ user }: { user: AuthUser | null }) {
+export default function Intercessors({ user, focus }: { user: AuthUser | null; focus?: { id: number; nonce: number } | null }) {
   const senior = isSenior(user);
   const [data, setData] = useState<Intercessor[]>([]);
   const [loading, setLoading] = useState(true);
@@ -20,6 +23,9 @@ export default function Intercessors({ user }: { user: AuthUser | null }) {
   const [statusFilter, setStatusFilter] = useState<string>("All");
   const [showAdd, setShowAdd] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [query, setQuery] = useState("");
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
+  const handledFocus = useRef(0);
   const [newPerson, setNewPerson] = useState({ name: "", phone: "", email: "", role: "Intercessor", availability: [] as string[] });
 
   useEffect(() => {
@@ -29,22 +35,59 @@ export default function Intercessors({ user }: { user: AuthUser | null }) {
       .finally(() => setLoading(false));
   }, []);
 
-  const filtered = statusFilter === "All" ? data : data.filter(i => i.status === statusFilter);
+  const tokens = useMemo(() => tokenize(query), [query]);
+  const filtered = data.filter(i =>
+    (statusFilter === "All" || i.status === statusFilter) &&
+    matchesQuery(tokens, [i.name, i.role, i.email, i.phone, i.status, i.specialization, i.availability])
+  );
+
+  // Arrived from the top-bar search: show that person.
+  useEffect(() => {
+    if (!focus || loading || handledFocus.current === focus.nonce) return;
+    handledFocus.current = focus.nonce;
+    const person = data.find(item => item.id === focus.id);
+    if (!person) return;
+    setStatusFilter("All");
+    setQuery("");
+    setSelected(person);
+    window.setTimeout(() => document.getElementById(`intercessor-${person.id}`)?.scrollIntoView({ behavior: "smooth", block: "center" }), 80);
+  }, [focus, loading, data]);
+
+  /** Checks the phone or email box as the person leaves it. */
+  function checkField(field: "phone" | "email", value: string) {
+    const result = field === "phone" ? checkPhone(value) : checkEmail(value, { required: false });
+    setFormErrors(previous => {
+      const next = { ...previous };
+      if (result.ok) delete next[field]; else next[field] = result.error ?? "";
+      return next;
+    });
+  }
 
   const inputStyle: React.CSSProperties = { background: "#f8faff", border: "1px solid rgba(10,22,40,0.12)", color: "#0a1628", borderRadius: 10, padding: "10px 14px", fontSize: 14, width: "100%", outline: "none" };
 
   async function submitIntercessor() {
-    if (!senior || !newPerson.name.trim()) return;
+    if (!senior) return;
+    const phone = checkPhone(newPerson.phone);
+    const email = checkEmail(newPerson.email, { required: false });
+    const problems: Record<string, string> = {};
+    if (!newPerson.name.trim()) problems.name = "Please enter the person's full name.";
+    if (!phone.ok) problems.phone = phone.error ?? "";
+    if (!email.ok) problems.email = email.error ?? "";
+    setFormErrors(problems);
+    if (Object.keys(problems).length > 0) return;
     setSubmitting(true);
     setError("");
     try {
       const created = await api.intercessors.create({
         ...newPerson,
+        phone: phone.value,
+        email: email.value,
         specialization: [],
         availability: newPerson.availability,
       });
       setData((prev) => [created as Intercessor, ...prev]);
       setNewPerson({ name: "", phone: "", email: "", role: "Intercessor", availability: [] });
+      setFormErrors({});
       setShowAdd(false);
     } catch (e) {
       setError(errorMessage(e));
@@ -98,9 +141,9 @@ export default function Intercessors({ user }: { user: AuthUser | null }) {
             <h3 className="font-bold text-sm" style={{ fontFamily: "'Cinzel', serif", color: "#0a1628" }}>Register New Intercessor</h3>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div><label className="block text-xs font-medium mb-1.5" style={{ color: "#64748b" }}>Full Name *</label><input value={newPerson.name} onChange={e => setNewPerson({ ...newPerson, name: e.target.value })} style={inputStyle} placeholder="Full name" /></div>
-            <div><label className="block text-xs font-medium mb-1.5" style={{ color: "#64748b" }}>Phone</label><input value={newPerson.phone} onChange={e => setNewPerson({ ...newPerson, phone: e.target.value })} style={inputStyle} placeholder="+250 7XX XXX XXX" /></div>
-            <div><label className="block text-xs font-medium mb-1.5" style={{ color: "#64748b" }}>Email</label><input value={newPerson.email} onChange={e => setNewPerson({ ...newPerson, email: e.target.value })} style={inputStyle} placeholder="email@ercmasoro.org" /></div>
+            <div><label className="block text-xs font-medium mb-1.5" style={{ color: "#64748b" }}>Full Name *</label><input value={newPerson.name} onChange={e => { setNewPerson({ ...newPerson, name: e.target.value }); if (formErrors.name) setFormErrors(({ name: _name, ...rest }) => rest); }} style={{ ...inputStyle, borderColor: formErrors.name ? "#8b0000" : "rgba(10,22,40,0.12)" }} placeholder="Full name" />{formErrors.name && <p className="text-xs mt-1" style={{ color: "#8b0000" }}>{formErrors.name}</p>}</div>
+            <div><label className="block text-xs font-medium mb-1.5" style={{ color: "#64748b" }}>Phone</label><input type="tel" value={newPerson.phone} onChange={e => { setNewPerson({ ...newPerson, phone: e.target.value }); if (formErrors.phone) checkField("phone", e.target.value); }} onBlur={e => checkField("phone", e.target.value)} style={{ ...inputStyle, borderColor: formErrors.phone ? "#8b0000" : "rgba(10,22,40,0.12)" }} placeholder="+250 7XX XXX XXX" />{formErrors.phone ? <p className="text-xs mt-1" style={{ color: "#8b0000" }}>{formErrors.phone}</p> : <p className="text-xs mt-1" style={{ color: "#94a3b8" }}>e.g. 0788 123 456</p>}</div>
+            <div><label className="block text-xs font-medium mb-1.5" style={{ color: "#64748b" }}>Email</label><input type="email" value={newPerson.email} onChange={e => { setNewPerson({ ...newPerson, email: e.target.value }); if (formErrors.email) checkField("email", e.target.value); }} onBlur={e => checkField("email", e.target.value)} style={{ ...inputStyle, borderColor: formErrors.email ? "#8b0000" : "rgba(10,22,40,0.12)" }} placeholder="email@ercmasoro.org" />{formErrors.email && <p className="text-xs mt-1" style={{ color: "#8b0000" }}>{formErrors.email}</p>}</div>
             <div>
               <label className="block text-xs font-medium mb-1.5" style={{ color: "#64748b" }}>Role</label>
               <select value={newPerson.role} onChange={e => setNewPerson({ ...newPerson, role: e.target.value })} style={inputStyle}>
@@ -142,26 +185,35 @@ export default function Intercessors({ user }: { user: AuthUser | null }) {
             <button onClick={submitIntercessor} disabled={submitting} className="px-5 py-2.5 rounded-xl text-sm font-semibold disabled:opacity-60" style={{ background: "#8b0000", color: "#fff" }}>
               {submitting ? "Registering..." : "Register"}
             </button>
-            <button onClick={() => setShowAdd(false)} className="px-5 py-2.5 rounded-xl text-sm font-semibold hover:bg-slate-100 transition-colors" style={{ color: "#64748b", border: "1px solid rgba(10,22,40,0.1)" }}>Cancel</button>
+            <button onClick={() => { setShowAdd(false); setFormErrors({}); }} className="px-5 py-2.5 rounded-xl text-sm font-semibold hover:bg-slate-100 transition-colors" style={{ color: "#64748b", border: "1px solid rgba(10,22,40,0.1)" }}>Cancel</button>
           </div>
         </div>
       )}
 
       {/* Filter tabs */}
-      <div className="animate-fade-up delay-100 flex gap-2">
-        {["All", "Active", "Inactive"].map(s => (
-          <button key={s} onClick={() => setStatusFilter(s)}
-            className="px-4 py-2 rounded-xl text-sm font-medium transition-all"
-            style={{ background: statusFilter === s ? "#0a1628" : "#fff", color: statusFilter === s ? "#fff" : "#64748b", border: `1px solid ${statusFilter === s ? "#0a1628" : "rgba(10,22,40,0.1)"}` }}
-          >{s}</button>
-        ))}
+      <div className="animate-fade-up delay-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <div className="flex gap-2">
+          {["All", "Active", "Inactive"].map(s => (
+            <button key={s} onClick={() => setStatusFilter(s)}
+              className="px-4 py-2 rounded-xl text-sm font-medium transition-all"
+              style={{ background: statusFilter === s ? "#0a1628" : "#fff", color: statusFilter === s ? "#fff" : "#64748b", border: `1px solid ${statusFilter === s ? "#0a1628" : "rgba(10,22,40,0.1)"}` }}
+            >{s}</button>
+          ))}
+        </div>
+        <div className="sm:w-80">
+          <SearchInput value={query} onChange={setQuery} placeholder="Search name, role, phone, email, day…" label="Search intercessors" />
+        </div>
       </div>
+      {query.trim() && !loading && (
+        <p className="text-xs -mt-3" style={{ color: "#94a3b8" }}>{filtered.length} of {data.length} intercessors match “{query.trim()}”</p>
+      )}
 
       {/* Cards */}
       <div className="grid grid-cols-1 gap-4 sm:gap-5 sm:grid-cols-2 lg:grid-cols-3">
         {filtered.map((person, i) => (
           <div
             key={person.id}
+            id={`intercessor-${person.id}`}
             onClick={() => setSelected(selected?.id === person.id ? null : person)}
             className="card-hover animate-fade-up rounded-2xl border bg-white p-6 cursor-pointer"
             style={{
@@ -179,7 +231,7 @@ export default function Intercessors({ user }: { user: AuthUser | null }) {
                 {person.initials}
               </div>
               <div className="flex-1 min-w-0">
-                <p className="font-bold text-sm leading-tight" style={{ fontFamily: "'Cinzel', serif", color: "#0a1628" }}>{person.name}</p>
+                <p className="font-bold text-sm leading-tight" style={{ fontFamily: "'Cinzel', serif", color: "#0a1628" }}><Highlight text={person.name} tokens={tokens} /></p>
                 <p className="text-xs mt-0.5" style={{ color: "#94a3b8" }}>{person.role}</p>
               </div>
               <span
@@ -230,7 +282,7 @@ export default function Intercessors({ user }: { user: AuthUser | null }) {
         <p className="text-sm" style={{ color: "#64748b" }}>
           {data.length === 0
             ? "No intercessors yet. People who sign up appear here automatically."
-            : "No intercessors match this filter."}
+            : query.trim() ? `No intercessors match “${query.trim()}”.` : "No intercessors match this filter."}
         </p>
       )}
 

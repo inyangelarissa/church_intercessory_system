@@ -1,5 +1,7 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { api, errorMessage } from "../lib/api";
+import { matchesQuery, tokenize } from "../lib/search";
+import SearchInput, { Highlight } from "./SearchInput";
 
 interface Session {
   id: number; title: string; day: string; time: string; duration: string;
@@ -19,7 +21,7 @@ const focusDot: Record<string, string> = {
   "Sunday Service Covering": "#0a1628",
 };
 
-export default function Schedule() {
+export default function Schedule({ focus }: { focus?: { id: number; nonce: number } | null }) {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -27,6 +29,8 @@ export default function Schedule() {
   const [selected, setSelected] = useState<Session | null>(null);
   const [showAdd, setShowAdd] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [query, setQuery] = useState("");
+  const handledFocus = useRef(0);
   const [newSession, setNewSession] = useState({ title: "", day: "Monday", time: "", duration: "1 hr", venue: "Main Sanctuary", focus: "Congregation Requests" });
 
   useEffect(() => {
@@ -36,7 +40,20 @@ export default function Schedule() {
       .finally(() => setLoading(false));
   }, []);
 
-  const byDay = dayOrder.map(day => ({ day, sessions: sessions.filter(s => s.day === day) }));
+  const tokens = useMemo(() => tokenize(query), [query]);
+  const visibleSessions = sessions.filter(s => matchesQuery(tokens, [s.title, s.day, s.time, s.venue, s.focus, s.lead, s.recurrence, s.intercessors]));
+  const byDay = dayOrder.map(day => ({ day, sessions: visibleSessions.filter(s => s.day === day) }));
+
+  // Arrived from the top-bar search: open that session.
+  useEffect(() => {
+    if (!focus || loading || handledFocus.current === focus.nonce) return;
+    handledFocus.current = focus.nonce;
+    const found = sessions.find(item => item.id === focus.id);
+    if (!found) return;
+    setQuery("");
+    setSelected(found);
+    window.setTimeout(() => (document.getElementById(`session-${found.id}`) ?? document.getElementById(`session-row-${found.id}`))?.scrollIntoView({ behavior: "smooth", block: "center" }), 80);
+  }, [focus, loading, sessions]);
   const inputStyle: React.CSSProperties = { background: "#f8faff", border: "1px solid rgba(10,22,40,0.12)", color: "#0a1628", borderRadius: 10, padding: "10px 14px", fontSize: 14, width: "100%", outline: "none" };
 
   async function submitSession() {
@@ -77,6 +94,13 @@ export default function Schedule() {
             + Add Session
           </button>
         </div>
+      </div>
+
+      <div className="animate-fade-up delay-100 max-w-xl">
+        <SearchInput value={query} onChange={setQuery} placeholder="Search sessions by title, day, venue, focus, lead, team…" label="Search prayer sessions" />
+        {query.trim() && !loading && (
+          <p className="text-xs mt-2" style={{ color: "#94a3b8" }}>{visibleSessions.length} of {sessions.length} sessions match “{query.trim()}”</p>
+        )}
       </div>
 
       {showAdd && (
@@ -124,6 +148,7 @@ export default function Schedule() {
                 {daySessions.map(s => (
                   <div
                     key={s.id}
+                    id={`session-${s.id}`}
                     onClick={() => setSelected(selected?.id === s.id ? null : s)}
                     className="p-3 rounded-xl cursor-pointer transition-all hover:shadow-md border-l-2"
                     style={{
@@ -134,7 +159,7 @@ export default function Schedule() {
                       boxShadow: "0 1px 4px rgba(10,22,40,0.05)",
                     }}
                   >
-                    <p className="text-xs font-bold leading-tight mb-1" style={{ fontFamily: "'Cinzel', serif", color: "#0a1628", fontSize: "10px" }}>{s.title}</p>
+                    <p className="text-xs font-bold leading-tight mb-1" style={{ fontFamily: "'Cinzel', serif", color: "#0a1628", fontSize: "10px" }}><Highlight text={s.title} tokens={tokens} /></p>
                     <p className="font-semibold" style={{ color: "#8b0000", fontFamily: "'JetBrains Mono', monospace", fontSize: "10px" }}>{s.time}</p>
                     <p style={{ color: "#94a3b8", fontSize: "10px" }}>{s.duration}</p>
                   </div>
@@ -161,8 +186,8 @@ export default function Schedule() {
               </tr>
             </thead>
             <tbody>
-              {sessions.map((s, i) => (
-                <tr key={s.id} onClick={() => setSelected(selected?.id === s.id ? null : s)}
+              {visibleSessions.map((s, i) => (
+                <tr key={s.id} id={`session-row-${s.id}`} onClick={() => setSelected(selected?.id === s.id ? null : s)}
                   className="cursor-pointer hover:bg-slate-50 border-b transition-colors"
                   style={{ borderColor: "rgba(10,22,40,0.04)", background: selected?.id === s.id ? "rgba(139,0,0,0.025)" : "transparent", animationDelay: `${i * 40}ms` }}
                 >

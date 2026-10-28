@@ -2,6 +2,7 @@ import { useState } from "react";
 import ercLogo from "../assets/erc-logo.png";
 import ercHeroBg from "../assets/erc-hero-bg.png";
 import { api, setSession, errorMessage, type AuthUser } from "../lib/api";
+import { checkEmail, checkPhone } from "../lib/validation";
 
 interface AuthProps {
   onAuthenticated: (user: AuthUser) => void;
@@ -29,9 +30,20 @@ export default function Auth({ onAuthenticated, onBack }: AuthProps) {
   const labelCls: React.CSSProperties = { color: "#0a1628" };
   const errCls: React.CSSProperties = { color: "#8b0000", fontSize: 12, marginTop: 4, fontFamily: "'JetBrains Mono', monospace" };
 
+  /** Checks one field as the person leaves it (and re-checks while typing once an error is showing). */
+  function checkField(field: "email" | "phone", value: string) {
+    const result = field === "email" ? checkEmail(value, { required: false }) : checkPhone(value);
+    setErrors(previous => {
+      const next = { ...previous };
+      if (result.ok) delete next[field]; else next[field] = result.error ?? "";
+      return next;
+    });
+  }
+
   function validateLogin() {
     const e: Record<string, string> = {};
-    if (!login.email.trim()) e.email = "Please enter your email address.";
+    const email = checkEmail(login.email);
+    if (!email.ok) e.email = email.error ?? "";
     if (!login.password) e.password = "Please enter your password.";
     return e;
   }
@@ -39,7 +51,10 @@ export default function Auth({ onAuthenticated, onBack }: AuthProps) {
   function validateSignup() {
     const e: Record<string, string> = {};
     if (!signup.name.trim()) e.name = "Please enter your full name.";
-    if (!signup.email.trim()) e.email = "Please enter your email address.";
+    const email = checkEmail(signup.email);
+    if (!email.ok) e.email = email.error ?? "";
+    const phone = checkPhone(signup.phone);
+    if (!phone.ok) e.phone = phone.error ?? "";
     if (!signup.password) e.password = "Please choose a password.";
     else if (signup.password.length < 6) e.password = "Password must be at least 6 characters.";
     if (signup.confirm !== signup.password) e.confirm = "Passwords do not match.";
@@ -53,7 +68,7 @@ export default function Auth({ onAuthenticated, onBack }: AuthProps) {
     if (Object.keys(e).length > 0) return;
     setFormState("submitting");
 
-    api.auth.login({ email: login.email.trim(), password: login.password })
+    api.auth.login({ email: checkEmail(login.email).value, password: login.password })
       .then(({ token, user }) => {
         setSession(token, user);
         onAuthenticated(user);
@@ -72,7 +87,7 @@ export default function Auth({ onAuthenticated, onBack }: AuthProps) {
     setFormState("submitting");
 
     api.auth.signup({
-      name: signup.name.trim(), email: signup.email.trim(), phone: signup.phone.trim(),
+      name: signup.name.trim(), email: checkEmail(signup.email).value, phone: checkPhone(signup.phone).value,
       role: signup.role,
       password: signup.password,
     })
@@ -81,7 +96,8 @@ export default function Auth({ onAuthenticated, onBack }: AuthProps) {
         onAuthenticated(user);
       })
       .catch((err) => {
-        setErrors({ email: errorMessage(err) });
+        const message = errorMessage(err);
+        setErrors(/phone/i.test(message) ? { phone: message } : { email: message });
       })
       .finally(() => setFormState("idle"));
   }
@@ -146,12 +162,13 @@ export default function Auth({ onAuthenticated, onBack }: AuthProps) {
               <h1 className="text-2xl font-bold mb-1" style={{ fontFamily: "'Cinzel', serif", color: "#0a1628" }}>Welcome back</h1>
               <p className="text-sm mb-7" style={{ color: "#94a3b8" }}>Log in to continue to the Intercession system.</p>
 
-              <form onSubmit={handleLogin} className="space-y-4">
+              <form onSubmit={handleLogin} className="space-y-4" noValidate>
                 <div>
                   <label className="block text-sm font-semibold mb-1.5" style={labelCls}>Email</label>
                   <input
-                    type="email" value={login.email}
-                    onChange={e => setLogin({ ...login, email: e.target.value })}
+                    type="email" value={login.email} autoComplete="email"
+                    onChange={e => { setLogin({ ...login, email: e.target.value }); if (errors.email) checkField("email", e.target.value); }}
+                    onBlur={e => checkField("email", e.target.value)}
                     style={{ ...inputCls, borderColor: errors.email ? "#8b0000" : "rgba(10,22,40,0.13)" }}
                     placeholder="you@ercmasoro.org"
                   />
@@ -196,7 +213,7 @@ export default function Auth({ onAuthenticated, onBack }: AuthProps) {
               <h1 className="text-2xl font-bold mb-1" style={{ fontFamily: "'Cinzel', serif", color: "#0a1628" }}>Create your account</h1>
               <p className="text-sm mb-7" style={{ color: "#94a3b8" }}>Join the ERC Masoro intercession team.</p>
 
-              <form onSubmit={handleSignup} className="space-y-4">
+              <form onSubmit={handleSignup} className="space-y-4" noValidate>
                 <div>
                   <label className="block text-sm font-semibold mb-1.5" style={labelCls}>Full Name</label>
                   <input
@@ -211,8 +228,9 @@ export default function Auth({ onAuthenticated, onBack }: AuthProps) {
                   <div>
                     <label className="block text-sm font-semibold mb-1.5" style={labelCls}>Email</label>
                     <input
-                      type="email" value={signup.email}
-                      onChange={e => setSignup({ ...signup, email: e.target.value })}
+                      type="email" value={signup.email} autoComplete="email"
+                      onChange={e => { setSignup({ ...signup, email: e.target.value }); if (errors.email) checkField("email", e.target.value); }}
+                      onBlur={e => checkField("email", e.target.value)}
                       style={{ ...inputCls, borderColor: errors.email ? "#8b0000" : "rgba(10,22,40,0.13)" }}
                       placeholder="you@ercmasoro.org"
                     />
@@ -221,11 +239,15 @@ export default function Auth({ onAuthenticated, onBack }: AuthProps) {
                   <div>
                     <label className="block text-sm font-semibold mb-1.5" style={labelCls}>Phone</label>
                     <input
-                      type="tel" value={signup.phone}
-                      onChange={e => setSignup({ ...signup, phone: e.target.value })}
-                      style={inputCls}
+                      type="tel" value={signup.phone} autoComplete="tel"
+                      onChange={e => { setSignup({ ...signup, phone: e.target.value }); if (errors.phone) checkField("phone", e.target.value); }}
+                      onBlur={e => checkField("phone", e.target.value)}
+                      style={{ ...inputCls, borderColor: errors.phone ? "#8b0000" : "rgba(10,22,40,0.13)" }}
                       placeholder="+250 7XX XXX XXX"
                     />
+                    {errors.phone
+                      ? <p style={errCls}>{errors.phone}</p>
+                      : <p style={{ color: "#94a3b8", fontSize: 11, marginTop: 4 }}>Optional. e.g. 0788 123 456</p>}
                   </div>
                 </div>
                 <div>
